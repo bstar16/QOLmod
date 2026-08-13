@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "qolmod",
+  "version": "${version}",
+  "name": "QOLmod",
+  "description": "A small standalone Fabric quality-of-life client mod that I can add features to over time.",
+  "authors": [
+    "bstar"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.bstar.qolmod.QOLmodClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.2",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
