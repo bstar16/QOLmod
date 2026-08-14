@@ -1,7 +1,7 @@
 package com.bstar.qolmod.gui;
 
-import com.bstar.qolmod.feature.setting.DoubleSetting;
-import com.bstar.qolmod.feature.setting.IntSetting;
+import com.bstar.qolmod.setting.DoubleSetting;
+import com.bstar.qolmod.setting.IntSetting;
 import java.util.Locale;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.text.Text;

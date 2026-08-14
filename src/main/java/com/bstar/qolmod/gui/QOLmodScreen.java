@@ -1,11 +1,10 @@
 package com.bstar.qolmod.gui;
 
 import com.bstar.qolmod.config.ConfigManager;
-import com.bstar.qolmod.feature.Feature;
 import com.bstar.qolmod.feature.FeatureManager;
+import com.bstar.qolmod.feature.QOLFeature;
 import java.util.ArrayList;
 import java.util.List;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.tooltip.Tooltip;
@@ -41,14 +40,14 @@ public final class QOLmodScreen extends Screen {
         addDrawableChild(new TextWidget(left + listWidth - 114, 38, 70, 12, Text.literal("State").formatted(Formatting.GRAY), textRenderer));
         addDrawableChild(new TextWidget(left + listWidth - 34, 38, 40, 12, Text.literal("Config").formatted(Formatting.GRAY), textRenderer));
 
-        for (Feature feature : featureManager.all()) {
+        for (QOLFeature feature : featureManager.all()) {
             TextWidget nameLabel = new TextWidget(left + 8, 0, labelWidth, 10, Text.literal(feature.name()), textRenderer);
             TextWidget descriptionLabel = new TextWidget(left + 8, 0, labelWidth, 10, Text.literal(feature.description()).formatted(Formatting.GRAY), textRenderer);
             nameLabel.setMaxWidth(labelWidth);
             descriptionLabel.setMaxWidth(labelWidth);
 
             ButtonWidget toggleButton = ButtonWidget.builder(toggleText(feature), button -> {
-                featureManager.setEnabled(feature, !feature.isEnabled(), MinecraftClient.getInstance());
+                featureManager.setEnabled(feature, !feature.isEnabled());
                 button.setMessage(toggleText(feature));
                 configManager.save();
             }).dimensions(left + listWidth - 118, 0, 84, 20).build();
@@ -131,7 +130,7 @@ public final class QOLmodScreen extends Screen {
         configManager.save();
     }
 
-    private Text toggleText(Feature feature) {
+    private Text toggleText(QOLFeature feature) {
         return Text.literal(feature.isEnabled() ? "Enabled" : "Disabled");
     }
 
@@ -140,7 +139,7 @@ public final class QOLmodScreen extends Screen {
     }
 
     private record FeatureRow(
-            Feature feature,
+            QOLFeature feature,
             TextWidget nameLabel,
             TextWidget descriptionLabel,
             ButtonWidget toggleButton,

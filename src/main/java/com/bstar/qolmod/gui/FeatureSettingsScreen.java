@@ -1,11 +1,11 @@
 package com.bstar.qolmod.gui;
 
 import com.bstar.qolmod.config.ConfigManager;
-import com.bstar.qolmod.feature.Feature;
-import com.bstar.qolmod.feature.setting.BooleanSetting;
-import com.bstar.qolmod.feature.setting.DoubleSetting;
-import com.bstar.qolmod.feature.setting.IntSetting;
-import com.bstar.qolmod.feature.setting.Setting;
+import com.bstar.qolmod.feature.QOLFeature;
+import com.bstar.qolmod.setting.BooleanSetting;
+import com.bstar.qolmod.setting.DoubleSetting;
+import com.bstar.qolmod.setting.IntSetting;
+import com.bstar.qolmod.setting.Setting;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -23,12 +23,12 @@ public final class FeatureSettingsScreen extends Screen {
     private static final Set<String> TEXT_FIELD_SETTING_IDS = Set.of("cycles", "chest-apply-delay");
 
     private final Screen parent;
-    private final Feature feature;
+    private final QOLFeature feature;
     private final ConfigManager configManager;
     private final List<SettingRow> rows = new ArrayList<>();
     private int scrollOffset;
 
-    public FeatureSettingsScreen(Screen parent, Feature feature, ConfigManager configManager) {
+    public FeatureSettingsScreen(Screen parent, QOLFeature feature, ConfigManager configManager) {
         super(Text.literal(feature.name()));
         this.parent = parent;
         this.feature = feature;

@@ -1,8 +1,8 @@
 package com.bstar.qolmod.feature.dupe;
 
-import com.bstar.qolmod.feature.setting.BooleanSetting;
-import com.bstar.qolmod.feature.setting.DoubleSetting;
-import com.bstar.qolmod.feature.setting.IntSetting;
+import com.bstar.qolmod.setting.BooleanSetting;
+import com.bstar.qolmod.setting.DoubleSetting;
+import com.bstar.qolmod.setting.IntSetting;
 
 public final class
 AutoDuperConfig {

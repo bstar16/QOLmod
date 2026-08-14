@@ -1,4 +1,4 @@
-package com.bstar.qolmod.feature.setting;
+package com.bstar.qolmod.setting;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;

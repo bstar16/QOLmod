@@ -1,12 +1,20 @@
 package com.bstar.qolmod.feature.impl;
 
-import com.bstar.qolmod.feature.AbstractFeature;
+import com.bstar.qolmod.command.QOLmodClientCommands;
+import com.bstar.qolmod.event.events.BlockUseEvent;
+import com.bstar.qolmod.event.events.ClientTickEvent;
+import com.bstar.qolmod.event.events.WorldRenderEvent;
+import com.bstar.qolmod.feature.FeatureState;
+import com.bstar.qolmod.feature.FeatureStatus;
+import com.bstar.qolmod.feature.QOLFeature;
+import com.bstar.qolmod.feature.ResetReason;
 import com.bstar.qolmod.feature.labels.StorageLabel;
 import com.bstar.qolmod.feature.labels.StorageLabelManager;
-import com.bstar.qolmod.feature.setting.BooleanSetting;
-import com.bstar.qolmod.feature.setting.DoubleSetting;
 import com.bstar.qolmod.gui.StorageIconPickerScreen;
 import com.bstar.qolmod.gui.StorageLabelEditScreen;
+import com.bstar.qolmod.render.StorageLabelRenderer;
+import com.bstar.qolmod.setting.BooleanSetting;
+import com.bstar.qolmod.setting.DoubleSetting;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -22,7 +30,7 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
-public final class StorageLabelsFeature extends AbstractFeature {
+public final class StorageLabelsFeature extends QOLFeature {
     private static final double REMOVE_FALLBACK_DISTANCE = 6.0;
     private static final double CLEAR_NEARBY_RADIUS = 16.0;
     private static final double MIN_RENDER_DISTANCE = 8.0;
@@ -69,6 +77,7 @@ public final class StorageLabelsFeature extends AbstractFeature {
     ));
 
     private final StorageLabelManager labelManager = new StorageLabelManager();
+    private final StorageLabelRenderer renderer = new StorageLabelRenderer(this);
     private String pendingLabelName;
     private boolean wasEscapePressed;
 
@@ -81,13 +90,22 @@ public final class StorageLabelsFeature extends AbstractFeature {
     }
 
     @Override
-    public void onDisable(MinecraftClient client) {
-        cancelPlacement(client, false);
+    protected void onRegister() {
+        loadLabels();
+        QOLmodClientCommands.register(this);
     }
 
     @Override
-    public void onClientTick(MinecraftClient client) {
-        tickPlacement(client);
+    protected void onEnable() {
+        listen(ClientTickEvent.class, event -> tickPlacement(event.context().client()));
+        listen(BlockUseEvent.class, this::onBlockUse);
+        listen(WorldRenderEvent.class, event -> renderer.render(event.context(), event.renderContext()));
+        updateStatus(FeatureStatus.of(FeatureState.RUNNING, "Rendering storage labels"));
+    }
+
+    @Override
+    protected void onReset(ResetReason reason) {
+        cancelPlacement(context().client(), false);
     }
 
     public void tickPlacement(MinecraftClient client) {
@@ -133,9 +151,10 @@ public final class StorageLabelsFeature extends AbstractFeature {
     public void beginPlacement(MinecraftClient client, String labelName) {
         pendingLabelName = labelName.trim();
         if (!isEnabled()) {
-            setEnabled(true);
+            featureManager().enable(this);
             sendMessage(client, "Storage Labels enabled for placement and rendering.", Formatting.GREEN);
         }
+        updateStatus(FeatureStatus.detailed(FeatureState.WAITING, "Right-click a block", pendingLabelName));
         sendMessage(client, "Right-click a block to place storage label: " + pendingLabelName, Formatting.YELLOW);
     }
 
@@ -148,6 +167,7 @@ public final class StorageLabelsFeature extends AbstractFeature {
         labelManager.put(dimensionId, pos, pendingLabelName, face);
         sendMessage(client, "Placed storage label \"" + pendingLabelName + "\" in " + dimensionId + " at " + formatPos(pos), Formatting.GREEN);
         pendingLabelName = null;
+        updateStatus(FeatureStatus.of(FeatureState.RUNNING, "Rendering storage labels"));
         return true;
     }
 
@@ -158,6 +178,9 @@ public final class StorageLabelsFeature extends AbstractFeature {
 
         String canceled = pendingLabelName;
         pendingLabelName = null;
+        if (isEnabled()) {
+            updateStatus(FeatureStatus.of(FeatureState.RUNNING, "Rendering storage labels"));
+        }
         if (notify) {
             sendMessage(client, "Canceled storage label placement: " + canceled, Formatting.GRAY);
         }
@@ -306,6 +329,16 @@ public final class StorageLabelsFeature extends AbstractFeature {
 
     private boolean hasWorld(MinecraftClient client) {
         return client != null && client.player != null && client.world != null;
+    }
+
+    private void onBlockUse(BlockUseEvent event) {
+        if (!event.world().isClient() || !hasPendingPlacement()) {
+            return;
+        }
+
+        if (placePendingLabel(context().client(), event.hitResult().getBlockPos(), event.hitResult().getSide())) {
+            event.cancel();
+        }
     }
 
     private Optional<StorageLabel> findNamedLabel(MinecraftClient client, String labelName) {

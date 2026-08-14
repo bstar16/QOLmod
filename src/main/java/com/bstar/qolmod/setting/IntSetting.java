@@ -1,24 +1,27 @@
-package com.bstar.qolmod.feature.setting;
+package com.bstar.qolmod.setting;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
 
-public final class DoubleSetting extends Setting<Double> {
-    private final double min;
-    private final double max;
+public final class IntSetting extends Setting<Integer> {
+    private final int min;
+    private final int max;
 
-    public DoubleSetting(String id, String displayName, String description, double defaultValue, double min, double max) {
+    public IntSetting(String id, String displayName, String description, int defaultValue, int min, int max) {
         super(id, displayName, description, defaultValue);
+        if (min > max) {
+            throw new IllegalArgumentException("min cannot be greater than max");
+        }
         this.min = min;
         this.max = max;
         set(defaultValue);
     }
 
-    public double min() {
+    public int min() {
         return min;
     }
 
-    public double max() {
+    public int max() {
         return max;
     }
 
@@ -30,12 +33,12 @@ public final class DoubleSetting extends Setting<Double> {
     @Override
     public void load(JsonElement element) {
         if (element != null && element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
-            set(element.getAsDouble());
+            set(element.getAsInt());
         }
     }
 
     @Override
-    protected Double sanitize(Double value) {
+    protected Integer sanitize(Integer value) {
         return Math.max(min, Math.min(max, value));
     }
 }

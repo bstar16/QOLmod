@@ -1,6 +1,7 @@
 package com.bstar.qolmod.render;
 
 import com.bstar.qolmod.QOLmodClient;
+import com.bstar.qolmod.core.QOLContext;
 import com.bstar.qolmod.feature.impl.StorageLabelsFeature;
 import com.bstar.qolmod.feature.labels.StorageLabel;
 import java.util.ArrayList;
@@ -38,8 +39,8 @@ public final class StorageLabelRenderer {
         this.feature = feature;
     }
 
-    public void render(WorldRenderContext context) {
-        MinecraftClient client = MinecraftClient.getInstance();
+    public void render(QOLContext qolContext, WorldRenderContext context) {
+        MinecraftClient client = qolContext.client();
         if (!feature.isEnabled() || client.world == null || client.player == null) {
             return;
         }
@@ -61,7 +62,7 @@ public final class StorageLabelRenderer {
                 continue;
             }
 
-            renderLabel(context, camera, cameraPos, renderPos, label);
+            renderLabel(context, client, camera, cameraPos, renderPos, label);
             renderedLabels++;
         }
 
@@ -71,8 +72,14 @@ public final class StorageLabelRenderer {
         }
     }
 
-    private void renderLabel(WorldRenderContext context, Camera camera, Vec3d cameraPos, Vec3d renderPos, StorageLabel label) {
-        MinecraftClient client = MinecraftClient.getInstance();
+    private void renderLabel(
+            WorldRenderContext context,
+            MinecraftClient client,
+            Camera camera,
+            Vec3d cameraPos,
+            Vec3d renderPos,
+            StorageLabel label
+    ) {
         TextRenderer textRenderer = client.textRenderer;
         MatrixStack matrices = context.matrices();
         float scale = (float) (VANILLA_NAMEPLATE_SCALE * feature.textScale());

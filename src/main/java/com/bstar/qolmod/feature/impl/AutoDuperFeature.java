@@ -1,15 +1,19 @@
 package com.bstar.qolmod.feature.impl;
 
-import com.bstar.qolmod.feature.AbstractFeature;
+import com.bstar.qolmod.event.events.ClientTickEvent;
+import com.bstar.qolmod.feature.FeatureState;
+import com.bstar.qolmod.feature.FeatureStatus;
+import com.bstar.qolmod.feature.QOLFeature;
+import com.bstar.qolmod.feature.ResetReason;
 import com.bstar.qolmod.feature.dupe.AutoDuperConfig;
 import com.bstar.qolmod.feature.dupe.DupeSequencer;
-import com.bstar.qolmod.feature.setting.BooleanSetting;
-import com.bstar.qolmod.feature.setting.DoubleSetting;
-import com.bstar.qolmod.feature.setting.IntSetting;
+import com.bstar.qolmod.setting.BooleanSetting;
+import com.bstar.qolmod.setting.DoubleSetting;
+import com.bstar.qolmod.setting.IntSetting;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HorseScreen;
 
-public final class AutoDuperFeature extends AbstractFeature {
+public final class AutoDuperFeature extends QOLFeature {
     private final IntSetting cycles = registerSetting(new IntSetting(
             "cycles",
             "Cycles",
@@ -99,20 +103,21 @@ public final class AutoDuperFeature extends AbstractFeature {
     }
 
     @Override
-    public void onEnable(MinecraftClient client) {
+    protected void onEnable() {
         cyclesCompleted = 0;
         cycleInProgress = false;
         wasInInventory = false;
-        sequencer.start(client);
+        sequencer.start(context().client());
+        listen(ClientTickEvent.class, event -> onClientTick(event.context().client()));
+        updateStatus(sequenceStatus("Starting dupe sequence"));
     }
 
     @Override
-    public void onDisable(MinecraftClient client) {
-        cleanup(client);
+    protected void onReset(ResetReason reason) {
+        cleanup(context().client());
     }
 
-    @Override
-    public void onClientTick(MinecraftClient client) {
+    private void onClientTick(MinecraftClient client) {
         if (!hasRequiredClientState(client)) {
             stopFromTick(client, "Missing client state - stopping dupe sequence");
             return;
@@ -136,6 +141,7 @@ public final class AutoDuperFeature extends AbstractFeature {
             cycleInProgress = false;
             cyclesCompleted++;
             sequencer.sendMessage(client, "Completed cycle " + cyclesCompleted);
+            updateStatus(sequenceStatus("Running dupe sequence"));
 
             if (config.cycles() != 0 && cyclesCompleted >= config.cycles()) {
                 stopFromTick(client, "Completed all " + config.cycles() + " cycles - stopping");
@@ -143,6 +149,7 @@ public final class AutoDuperFeature extends AbstractFeature {
             }
         }
 
+        updateStatus(sequenceStatus(stageActivity(sequencer.getCurrentStage())));
         sequencer.tick(client);
     }
 
@@ -156,8 +163,8 @@ public final class AutoDuperFeature extends AbstractFeature {
 
     private void stopFromTick(MinecraftClient client, String reason) {
         sequencer.sendMessage(client, reason);
-        cleanup(client);
-        setEnabled(false);
+        updateStatus(FeatureStatus.detailed(FeatureState.ERROR, "Dupe sequence stopped", reason));
+        featureManager().disable(this, ResetReason.ERROR);
     }
 
     private void cleanup(MinecraftClient client) {
@@ -165,5 +172,33 @@ public final class AutoDuperFeature extends AbstractFeature {
         wasInInventory = false;
         cyclesCompleted = 0;
         cycleInProgress = false;
+    }
+
+    private String stageActivity(int stage) {
+        return switch (stage) {
+            case 0 -> "Preparing hotbar";
+            case 1, 2 -> "Mounting donkey";
+            case 3, 4 -> "Opening inventory";
+            case 5 -> "Moving items to donkey";
+            case 6 -> "Applying chest";
+            case 7 -> "Moving items from donkey";
+            case 8 -> "Closing inventory";
+            case 9, 10 -> "Dismounting";
+            default -> "Running dupe sequence";
+        };
+    }
+
+    private FeatureStatus sequenceStatus(String activity) {
+        String detail = "Cycle " + cyclesCompleted;
+        if (config.cycles() == 0) {
+            return FeatureStatus.detailed(FeatureState.RUNNING, activity, detail);
+        }
+        return FeatureStatus.progressing(
+                FeatureState.RUNNING,
+                activity,
+                detail,
+                cyclesCompleted,
+                config.cycles()
+        );
     }
 }
