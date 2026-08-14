@@ -11,6 +11,7 @@ import com.bstar.qolmod.automation.task.TimeoutTask;
 import com.bstar.qolmod.automation.task.WaitUntilTask;
 import java.util.Objects;
 import java.util.function.Function;
+import net.minecraft.client.network.ClientPlayerEntity;
 import org.slf4j.Logger;
 
 /** Temporary in-game validation workflows; these are not gameplay features. */
@@ -47,10 +48,14 @@ public final class DevelopmentWorkflows {
                 "Waits up to 30 seconds for the player to mount a vehicle.",
                 context -> new TimeoutTask(new WaitUntilTask(
                         "Waiting for player to mount",
-                        taskContext -> taskContext.qol().player() != null
-                                && taskContext.qol().player().hasVehicle()
+                        DevelopmentWorkflows::isLocalPlayerMounted
                 ), 30 * DelayTask.TICKS_PER_SECOND)
         );
+    }
+
+    private static boolean isLocalPlayerMounted(TaskContext context) {
+        ClientPlayerEntity player = context.qol().player();
+        return player != null && player.getVehicle() != null;
     }
 
     public static AutomationWorkflow cancellationTest(Logger logger) {
