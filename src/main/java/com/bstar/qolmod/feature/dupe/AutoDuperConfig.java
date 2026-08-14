@@ -4,11 +4,9 @@ import com.bstar.qolmod.setting.BooleanSetting;
 import com.bstar.qolmod.setting.DoubleSetting;
 import com.bstar.qolmod.setting.IntSetting;
 
-public final class
-AutoDuperConfig {
+public final class AutoDuperConfig {
     private final IntSetting cycles;
     private final BooleanSetting shulkersOnly;
-    private final BooleanSetting mountWithoutChest;
     private final DoubleSetting mountDelay;
     private final DoubleSetting keyPressDelay;
     private final DoubleSetting inventoryDelay;
@@ -19,7 +17,6 @@ AutoDuperConfig {
     public AutoDuperConfig(
             IntSetting cycles,
             BooleanSetting shulkersOnly,
-            BooleanSetting mountWithoutChest,
             DoubleSetting mountDelay,
             DoubleSetting keyPressDelay,
             DoubleSetting inventoryDelay,
@@ -29,7 +26,6 @@ AutoDuperConfig {
     ) {
         this.cycles = cycles;
         this.shulkersOnly = shulkersOnly;
-        this.mountWithoutChest = mountWithoutChest;
         this.mountDelay = mountDelay;
         this.keyPressDelay = keyPressDelay;
         this.inventoryDelay = inventoryDelay;
@@ -44,10 +40,6 @@ AutoDuperConfig {
 
     public boolean shulkersOnly() {
         return shulkersOnly.get();
-    }
-
-    public boolean mountWithoutChest() {
-        return mountWithoutChest.get();
     }
 
     public int mountDelayTicks() {

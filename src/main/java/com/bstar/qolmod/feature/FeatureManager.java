@@ -113,7 +113,8 @@ public final class FeatureManager {
             deactivate(feature, reason, true);
         }
         feature.setEnabledFromManager(false);
-        if (feature.status().state() != FeatureState.ERROR) {
+        if (feature.status().state() != FeatureState.ERROR
+                && feature.status().state() != FeatureState.COMPLETED) {
             feature.setStatusFromManager(FeatureStatus.idle());
         }
         if (wasEnabled) {

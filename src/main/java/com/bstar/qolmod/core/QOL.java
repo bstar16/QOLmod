@@ -49,7 +49,7 @@ public final class QOL {
         initialized = true;
 
         automationEngine.register();
-        featureManager.register(new AutoDuperFeature());
+        featureManager.register(new AutoDuperFeature(automationEngine));
         StorageLabelsFeature storageLabels = new StorageLabelsFeature();
         featureManager.register(storageLabels);
         featureManager.register(new TestFeature());

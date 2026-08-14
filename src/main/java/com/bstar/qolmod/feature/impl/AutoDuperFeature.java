@@ -1,17 +1,23 @@
 package com.bstar.qolmod.feature.impl;
 
+import com.bstar.qolmod.automation.AutomationEngine;
+import com.bstar.qolmod.automation.AutomationStartResult;
+import com.bstar.qolmod.automation.AutomationState;
+import com.bstar.qolmod.automation.AutomationStatus;
+import com.bstar.qolmod.automation.AutomationStopReason;
 import com.bstar.qolmod.event.events.ClientTickEvent;
 import com.bstar.qolmod.feature.FeatureState;
 import com.bstar.qolmod.feature.FeatureStatus;
 import com.bstar.qolmod.feature.QOLFeature;
 import com.bstar.qolmod.feature.ResetReason;
 import com.bstar.qolmod.feature.dupe.AutoDuperConfig;
-import com.bstar.qolmod.feature.dupe.DupeSequencer;
+import com.bstar.qolmod.feature.dupe.AutoDuperWorkflow;
 import com.bstar.qolmod.setting.BooleanSetting;
 import com.bstar.qolmod.setting.DoubleSetting;
 import com.bstar.qolmod.setting.IntSetting;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.ingame.HorseScreen;
+import java.util.Objects;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 
 public final class AutoDuperFeature extends QOLFeature {
     private final IntSetting cycles = registerSetting(new IntSetting(
@@ -26,12 +32,6 @@ public final class AutoDuperFeature extends QOLFeature {
             "shulkers-only",
             "Shulkers Only",
             "Only moves shulker boxes back from the donkey inventory.",
-            false
-    ));
-    private final BooleanSetting mountWithoutChest = registerSetting(new BooleanSetting(
-            "mount-without-chest",
-            "Mount Without Chest",
-            "Mounts the donkey without having a chest selected.",
             false
     ));
     private final DoubleSetting mountDelay = registerSetting(new DoubleSetting(
@@ -85,7 +85,6 @@ public final class AutoDuperFeature extends QOLFeature {
     private final AutoDuperConfig config = new AutoDuperConfig(
             cycles,
             shulkersOnly,
-            mountWithoutChest,
             mountDelay,
             keyPressDelay,
             inventoryDelay,
@@ -93,112 +92,105 @@ public final class AutoDuperFeature extends QOLFeature {
             chestApplyDelay,
             dismountDelay
     );
-    private final DupeSequencer sequencer = new DupeSequencer(config);
-    private boolean wasInInventory;
-    private int cyclesCompleted;
-    private boolean cycleInProgress;
+    private final AutomationEngine automation;
+    private AutoDuperWorkflow workflow;
+    private String startFailure;
 
-    public AutoDuperFeature() {
+    public AutoDuperFeature(AutomationEngine automation) {
         super("auto-duper", "Auto Duper", "Automatically dupes items using the donkey method.");
+        this.automation = Objects.requireNonNull(automation, "automation");
     }
 
     @Override
     protected void onEnable() {
-        cyclesCompleted = 0;
-        cycleInProgress = false;
-        wasInInventory = false;
-        sequencer.start(context().client());
-        listen(ClientTickEvent.class, event -> onClientTick(event.context().client()));
-        updateStatus(sequenceStatus("Starting dupe sequence"));
+        workflow = new AutoDuperWorkflow(config);
+        startFailure = null;
+        AutomationStartResult result = automation.start(workflow);
+        listen(ClientTickEvent.class, event -> syncWorkflowStatus());
+        if (result.started()) {
+            updateStatus(workflowStatus(FeatureState.RUNNING, "Starting AutoDuper"));
+        } else {
+            startFailure = result.message();
+            updateStatus(FeatureStatus.detailed(FeatureState.ERROR, "AutoDuper could not start", startFailure));
+        }
     }
 
     @Override
     protected void onReset(ResetReason reason) {
-        cleanup(context().client());
+        if ((reason == ResetReason.USER_DISABLED || reason == ResetReason.ERROR)
+                && isOwnWorkflowRunning()) {
+            automation.cancel();
+        }
+        workflow = null;
+        startFailure = null;
     }
 
-    private void onClientTick(MinecraftClient client) {
-        if (!hasRequiredClientState(client)) {
-            stopFromTick(client, "Missing client state - stopping dupe sequence");
+    private void syncWorkflowStatus() {
+        if (startFailure != null) {
+            featureManager().disable(this, ResetReason.ERROR);
+            return;
+        }
+        if (workflow == null) {
             return;
         }
 
-        int currentStage = sequencer.getCurrentStage();
-
-        if (client.currentScreen instanceof HorseScreen) {
-            wasInInventory = true;
-        } else if (wasInInventory && client.currentScreen == null) {
-            wasInInventory = false;
-            if (currentStage >= 4 && currentStage <= 7) {
-                stopFromTick(client, "Inventory closed - stopping dupe sequence");
-                return;
-            }
+        AutomationStatus automationStatus = automation.status();
+        if (automationStatus.workflowId().filter(AutoDuperWorkflow.ID::equals).isEmpty()) {
+            return;
         }
 
-        if (currentStage == 1 && !cycleInProgress) {
-            cycleInProgress = true;
-        } else if (currentStage == 0 && cycleInProgress) {
-            cycleInProgress = false;
-            cyclesCompleted++;
-            sequencer.sendMessage(client, "Completed cycle " + cyclesCompleted);
-            updateStatus(sequenceStatus("Running dupe sequence"));
-
-            if (config.cycles() != 0 && cyclesCompleted >= config.cycles()) {
-                stopFromTick(client, "Completed all " + config.cycles() + " cycles - stopping");
-                return;
-            }
+        if (automationStatus.state() == AutomationState.RUNNING
+                || automationStatus.state() == AutomationState.WAITING) {
+            FeatureState state = automationStatus.state() == AutomationState.WAITING
+                    ? FeatureState.WAITING
+                    : FeatureState.RUNNING;
+            updateStatus(workflowStatus(state, automationStatus.activity()));
+            return;
         }
 
-        updateStatus(sequenceStatus(stageActivity(sequencer.getCurrentStage())));
-        sequencer.tick(client);
+        AutomationStopReason stopReason = automationStatus.stopReason().orElse(AutomationStopReason.ERROR);
+        String detail = automationStatus.detail().orElse(stopReason.name());
+        if (stopReason == AutomationStopReason.COMPLETED) {
+            sendMessage("Completed all " + workflow.completedCycles() + " cycles - stopping");
+            updateStatus(FeatureStatus.detailed(FeatureState.COMPLETED, "AutoDuper complete", detail));
+            featureManager().disable(this, ResetReason.USER_DISABLED);
+            return;
+        }
+        if (automationStatus.state() == AutomationState.ERROR) {
+            sendMessage(detail);
+            updateStatus(FeatureStatus.detailed(FeatureState.ERROR, "AutoDuper stopped", detail));
+            featureManager().disable(this, ResetReason.ERROR);
+            return;
+        }
+
+        sendMessage("Automation cancelled: " + detail);
+        featureManager().disable(this, ResetReason.USER_DISABLED);
     }
 
-    private boolean hasRequiredClientState(MinecraftClient client) {
-        return client != null
-                && client.player != null
-                && client.world != null
-                && client.interactionManager != null
-                && client.getNetworkHandler() != null;
+    private boolean isOwnWorkflowRunning() {
+        return automation.isRunning()
+                && automation.status().workflowId().filter(AutoDuperWorkflow.ID::equals).isPresent();
     }
 
-    private void stopFromTick(MinecraftClient client, String reason) {
-        sequencer.sendMessage(client, reason);
-        updateStatus(FeatureStatus.detailed(FeatureState.ERROR, "Dupe sequence stopped", reason));
-        featureManager().disable(this, ResetReason.ERROR);
-    }
-
-    private void cleanup(MinecraftClient client) {
-        sequencer.reset(client);
-        wasInInventory = false;
-        cyclesCompleted = 0;
-        cycleInProgress = false;
-    }
-
-    private String stageActivity(int stage) {
-        return switch (stage) {
-            case 0 -> "Preparing hotbar";
-            case 1, 2 -> "Mounting donkey";
-            case 3, 4 -> "Opening inventory";
-            case 5 -> "Moving items to donkey";
-            case 6 -> "Applying chest";
-            case 7 -> "Moving items from donkey";
-            case 8 -> "Closing inventory";
-            case 9, 10 -> "Dismounting";
-            default -> "Running dupe sequence";
-        };
-    }
-
-    private FeatureStatus sequenceStatus(String activity) {
-        String detail = "Cycle " + cyclesCompleted;
-        if (config.cycles() == 0) {
-            return FeatureStatus.detailed(FeatureState.RUNNING, activity, detail);
+    private FeatureStatus workflowStatus(FeatureState state, String activity) {
+        int completed = workflow == null ? 0 : workflow.completedCycles();
+        int target = workflow == null ? config.cycles() : workflow.targetCycles();
+        if (target == 0) {
+            return FeatureStatus.detailed(state, activity, "Completed " + completed + " cycles");
         }
         return FeatureStatus.progressing(
-                FeatureState.RUNNING,
+                state,
                 activity,
-                detail,
-                cyclesCompleted,
-                config.cycles()
+                "Completed " + completed + " / " + target + " cycles",
+                Math.min(completed, target),
+                target
         );
+    }
+
+    private void sendMessage(String message) {
+        if (context().player() != null) {
+            context().player().sendMessage(Text.literal("[AutoDuper] ").formatted(Formatting.AQUA)
+                    .append(Text.literal(message).formatted(Formatting.WHITE)), false);
+        }
     }
 }

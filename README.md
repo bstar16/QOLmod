@@ -29,7 +29,7 @@ Manual W/A/S/D, jump, or sneak input cancels a workflow while it owns player inp
 
 Temporary in-game validation is available through `/qol automation status`, `/qol automation cancel`, and `/qol automation test delay|sneak|mount|long`. `/qol panic` exercises the full panic cleanup path.
 
-AutoDuper remains the unchanged legacy reference implementation and still uses `DupeSequencer`. Storage Labels uses the internal event architecture and keeps its separate data file and compatibility loading. `TestFeature` remains temporary validation for the Phase 1 core.
+AutoDuper runs as a composed automation workflow through the shared automation engine. Its legacy integer-stage sequencer was removed after controlled gameplay parity validation. Storage Labels uses the internal event architecture and keeps its separate data file and compatibility loading. `TestFeature` remains temporary validation for the Phase 1 core.
 
 Shared problems belong in the core; feature-specific problems stay in the feature.
 
