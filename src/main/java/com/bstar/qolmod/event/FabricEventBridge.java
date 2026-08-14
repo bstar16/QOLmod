@@ -4,6 +4,7 @@ import com.bstar.qolmod.core.QOLContext;
 import com.bstar.qolmod.event.events.BlockUseEvent;
 import com.bstar.qolmod.event.events.ClientShutdownEvent;
 import com.bstar.qolmod.event.events.ClientTickEvent;
+import com.bstar.qolmod.event.events.PlayerDeathEvent;
 import com.bstar.qolmod.event.events.WorldJoinEvent;
 import com.bstar.qolmod.event.events.WorldLeaveEvent;
 import com.bstar.qolmod.event.events.WorldRenderEvent;
@@ -20,6 +21,7 @@ public final class FabricEventBridge {
     private final QOLContext context;
     private final QOLEventBus eventBus;
     private boolean registered;
+    private boolean playerWasDead;
 
     public FabricEventBridge(QOLContext context, QOLEventBus eventBus) {
         this.context = Objects.requireNonNull(context, "context");
@@ -32,7 +34,14 @@ public final class FabricEventBridge {
         }
         registered = true;
 
-        ClientTickEvents.END_CLIENT_TICK.register(client -> eventBus.post(new ClientTickEvent(context)));
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            boolean playerDead = context.player() != null && context.player().isDead();
+            if (playerDead && !playerWasDead) {
+                eventBus.post(new PlayerDeathEvent(context));
+            }
+            playerWasDead = playerDead;
+            eventBus.post(new ClientTickEvent(context));
+        });
         WorldRenderEvents.END_MAIN.register(renderContext ->
                 eventBus.post(new WorldRenderEvent(context, renderContext)));
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
@@ -41,10 +50,14 @@ public final class FabricEventBridge {
             }
             return eventBus.post(new BlockUseEvent(context, player, world, hand, hitResult)).result();
         });
-        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) ->
-                eventBus.post(new WorldJoinEvent(context)));
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
-                eventBus.post(new WorldLeaveEvent(context)));
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            playerWasDead = false;
+            eventBus.post(new WorldJoinEvent(context));
+        });
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            playerWasDead = false;
+            eventBus.post(new WorldLeaveEvent(context));
+        });
         ClientLifecycleEvents.CLIENT_STOPPING.register(client ->
                 eventBus.post(new ClientShutdownEvent(context)));
     }

@@ -1,5 +1,7 @@
 package com.bstar.qolmod.core;
 
+import com.bstar.qolmod.automation.AutomationEngine;
+import com.bstar.qolmod.command.QOLmodClientCommands;
 import com.bstar.qolmod.config.ConfigManager;
 import com.bstar.qolmod.event.EventSubscription;
 import com.bstar.qolmod.event.FabricEventBridge;
@@ -20,6 +22,7 @@ public final class QOL {
     private final Logger logger;
     private final QOLContext context;
     private final QOLEventBus eventBus;
+    private final AutomationEngine automationEngine;
     private final FeatureManager featureManager;
     private final ConfigManager configManager;
     private final KeybindManager keybindManager;
@@ -32,6 +35,7 @@ public final class QOL {
         this.logger = Objects.requireNonNull(logger, "logger");
         context = new QOLContext(Objects.requireNonNull(client, "client"));
         eventBus = new QOLEventBus(logger);
+        automationEngine = new AutomationEngine(context, eventBus, logger);
         featureManager = new FeatureManager(context, eventBus, logger);
         configManager = new ConfigManager(featureManager, logger);
         keybindManager = new KeybindManager(context, eventBus, featureManager, configManager);
@@ -44,9 +48,12 @@ public final class QOL {
         }
         initialized = true;
 
+        automationEngine.register();
         featureManager.register(new AutoDuperFeature());
-        featureManager.register(new StorageLabelsFeature());
+        StorageLabelsFeature storageLabels = new StorageLabelsFeature();
+        featureManager.register(storageLabels);
         featureManager.register(new TestFeature());
+        QOLmodClientCommands.register(this, storageLabels);
         configManager.load();
         keybindManager.register();
         shutdownSubscription = eventBus.subscribe(ClientShutdownEvent.class, event -> shutdown());
@@ -54,6 +61,7 @@ public final class QOL {
     }
 
     public void panic() {
+        automationEngine.panic();
         featureManager.disableAll(ResetReason.PANIC);
         keybindManager.clearTransientState();
         configManager.save();
@@ -65,6 +73,7 @@ public final class QOL {
             return;
         }
         shuttingDown = true;
+        automationEngine.shutdown();
         configManager.save();
         keybindManager.shutdown();
         featureManager.shutdown();
@@ -84,6 +93,10 @@ public final class QOL {
 
     public FeatureManager featureManager() {
         return featureManager;
+    }
+
+    public AutomationEngine automation() {
+        return automationEngine;
     }
 
     public ConfigManager configManager() {

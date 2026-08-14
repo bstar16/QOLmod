@@ -4,6 +4,7 @@ import com.bstar.qolmod.core.QOLContext;
 import com.bstar.qolmod.event.EventSubscription;
 import com.bstar.qolmod.event.QOLEventBus;
 import com.bstar.qolmod.event.events.ClientTickEvent;
+import com.bstar.qolmod.event.events.PlayerDeathEvent;
 import com.bstar.qolmod.event.events.WorldJoinEvent;
 import com.bstar.qolmod.event.events.WorldLeaveEvent;
 import java.util.Collection;
@@ -24,7 +25,6 @@ public final class FeatureManager {
     private final QOLEventBus eventBus;
     private final Logger logger;
     private final List<EventSubscription> subscriptions;
-    private boolean playerWasDead;
 
     public FeatureManager(QOLContext context, QOLEventBus eventBus, Logger logger) {
         this.context = Objects.requireNonNull(context, "context");
@@ -33,7 +33,8 @@ public final class FeatureManager {
         subscriptions = List.of(
                 eventBus.subscribe(ClientTickEvent.class, this::onClientTick),
                 eventBus.subscribe(WorldJoinEvent.class, event -> activateConfiguredFeatures()),
-                eventBus.subscribe(WorldLeaveEvent.class, event -> resetActiveFeatures(ResetReason.WORLD_LEFT))
+                eventBus.subscribe(WorldLeaveEvent.class, event -> resetActiveFeatures(ResetReason.WORLD_LEFT)),
+                eventBus.subscribe(PlayerDeathEvent.class, event -> resetActiveFeatures(ResetReason.PLAYER_DIED))
         );
     }
 
@@ -152,13 +153,9 @@ public final class FeatureManager {
     }
 
     private void onClientTick(ClientTickEvent event) {
-        boolean playerDead = isPlayerDead();
-        if (playerDead && !playerWasDead) {
-            resetActiveFeatures(ResetReason.PLAYER_DIED);
-        } else if (!playerDead && context.isPlayable()) {
+        if (!isPlayerDead() && context.isPlayable()) {
             activateConfiguredFeatures();
         }
-        playerWasDead = playerDead;
     }
 
     private void activateConfiguredFeatures() {

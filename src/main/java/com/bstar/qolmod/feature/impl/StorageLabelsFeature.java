@@ -1,6 +1,5 @@
 package com.bstar.qolmod.feature.impl;
 
-import com.bstar.qolmod.command.QOLmodClientCommands;
 import com.bstar.qolmod.event.events.BlockUseEvent;
 import com.bstar.qolmod.event.events.ClientTickEvent;
 import com.bstar.qolmod.event.events.WorldRenderEvent;
@@ -92,7 +91,6 @@ public final class StorageLabelsFeature extends QOLFeature {
     @Override
     protected void onRegister() {
         loadLabels();
-        QOLmodClientCommands.register(this);
     }
 
     @Override
