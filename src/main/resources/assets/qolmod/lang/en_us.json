@@ -1,6 +1,5 @@
 {
   "category.qolmod.controls": "QOLmod",
   "key.qolmod.open_config": "Open Config",
-  "key.qolmod.toggle_auto_duper": "Toggle Auto Duper",
-  "key.qolmod.toggle_test_feature": "Toggle Test Feature"
+  "key.qolmod.toggle_auto_duper": "Toggle Auto Duper"
 }

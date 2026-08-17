@@ -2,10 +2,7 @@ package com.bstar.qolmod.command;
 
 import com.bstar.qolmod.QOLmodClient;
 import com.bstar.qolmod.automation.AutomationEngine;
-import com.bstar.qolmod.automation.AutomationStartResult;
 import com.bstar.qolmod.automation.AutomationStatus;
-import com.bstar.qolmod.automation.AutomationWorkflow;
-import com.bstar.qolmod.automation.dev.DevelopmentWorkflows;
 import com.bstar.qolmod.core.QOL;
 import com.bstar.qolmod.feature.impl.StorageLabelsFeature;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -21,7 +18,6 @@ import net.minecraft.command.CommandSource;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Supplier;
 
 public final class QOLmodClientCommands {
     private QOLmodClientCommands() {
@@ -134,39 +130,7 @@ public final class QOLmodClientCommands {
                             }
                             context.getSource().sendFeedback(Text.literal("Automation cancelled."));
                             return 1;
-                        }))
-                .then(ClientCommandManager.literal("test")
-                        .then(testCommand("delay", automation, DevelopmentWorkflows::delayTest))
-                        .then(testCommand("sneak", automation, DevelopmentWorkflows::sneakTest))
-                        .then(testCommand("mount", automation, DevelopmentWorkflows::mountConditionTest))
-                        .then(testCommand(
-                                "long",
-                                automation,
-                                () -> DevelopmentWorkflows.cancellationTest(QOLmodClient.LOGGER)
-                        )));
-    }
-
-    private static LiteralArgumentBuilder<FabricClientCommandSource> testCommand(
-            String name,
-            AutomationEngine automation,
-            Supplier<AutomationWorkflow> workflowSupplier
-    ) {
-        return ClientCommandManager.literal(name)
-                .executes(context -> startWorkflow(context.getSource(), automation, workflowSupplier.get()));
-    }
-
-    private static int startWorkflow(
-            FabricClientCommandSource source,
-            AutomationEngine automation,
-            AutomationWorkflow workflow
-    ) {
-        AutomationStartResult result = automation.start(workflow);
-        if (result.started()) {
-            source.sendFeedback(Text.literal(result.message()).formatted(Formatting.GREEN));
-            return 1;
-        }
-        source.sendError(Text.literal(result.message()));
-        return 0;
+                        }));
     }
 
     private static int showAutomationStatus(FabricClientCommandSource source, AutomationEngine automation) {

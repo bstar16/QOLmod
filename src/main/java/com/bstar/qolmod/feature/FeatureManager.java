@@ -25,6 +25,9 @@ public final class FeatureManager {
     private final QOLEventBus eventBus;
     private final Logger logger;
     private final List<EventSubscription> subscriptions;
+    private final Map<QOLFeature, Integer> retainedTerminalStatusTicks = new LinkedHashMap<>();
+    private static final int ERROR_STATUS_RETENTION_TICKS = 120;
+    private static final int COMPLETED_STATUS_RETENTION_TICKS = 80;
 
     public FeatureManager(QOLContext context, QOLEventBus eventBus, Logger logger) {
         this.context = Objects.requireNonNull(context, "context");
@@ -90,6 +93,8 @@ public final class FeatureManager {
             return;
         }
 
+        retainedTerminalStatusTicks.remove(feature);
+        feature.setStatusFromManager(FeatureStatus.idle());
         feature.setEnabledFromManager(true);
         if (context.isPlayable() && !isPlayerDead()) {
             activate(feature);
@@ -113,8 +118,12 @@ public final class FeatureManager {
             deactivate(feature, reason, true);
         }
         feature.setEnabledFromManager(false);
-        if (feature.status().state() != FeatureState.ERROR
-                && feature.status().state() != FeatureState.COMPLETED) {
+        if (feature.status().state() == FeatureState.ERROR) {
+            retainedTerminalStatusTicks.put(feature, ERROR_STATUS_RETENTION_TICKS);
+        } else if (feature.status().state() == FeatureState.COMPLETED) {
+            retainedTerminalStatusTicks.put(feature, COMPLETED_STATUS_RETENTION_TICKS);
+        } else {
+            retainedTerminalStatusTicks.remove(feature);
             feature.setStatusFromManager(FeatureStatus.idle());
         }
         if (wasEnabled) {
@@ -154,8 +163,27 @@ public final class FeatureManager {
     }
 
     private void onClientTick(ClientTickEvent event) {
+        expireRetainedTerminalStatuses();
         if (!isPlayerDead() && context.isPlayable()) {
             activateConfiguredFeatures();
+        }
+    }
+
+    private void expireRetainedTerminalStatuses() {
+        for (Map.Entry<QOLFeature, Integer> entry : List.copyOf(retainedTerminalStatusTicks.entrySet())) {
+            QOLFeature feature = entry.getKey();
+            if (feature.isEnabled() || feature.isActive()) {
+                retainedTerminalStatusTicks.remove(feature);
+                continue;
+            }
+
+            int remaining = entry.getValue() - 1;
+            if (remaining <= 0) {
+                feature.setStatusFromManager(FeatureStatus.idle());
+                retainedTerminalStatusTicks.remove(feature);
+            } else {
+                retainedTerminalStatusTicks.put(feature, remaining);
+            }
         }
     }
 
@@ -181,6 +209,7 @@ public final class FeatureManager {
             deactivate(feature, ResetReason.ERROR, true);
             feature.setEnabledFromManager(false);
             feature.setStatusFromManager(FeatureStatus.detailed(FeatureState.ERROR, "Enable failed", exception.getMessage()));
+            retainedTerminalStatusTicks.put(feature, ERROR_STATUS_RETENTION_TICKS);
         }
     }
 

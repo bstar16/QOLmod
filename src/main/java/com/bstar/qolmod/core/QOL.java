@@ -11,7 +11,6 @@ import com.bstar.qolmod.feature.FeatureManager;
 import com.bstar.qolmod.feature.ResetReason;
 import com.bstar.qolmod.feature.impl.AutoDuperFeature;
 import com.bstar.qolmod.feature.impl.StorageLabelsFeature;
-import com.bstar.qolmod.feature.impl.TestFeature;
 import com.bstar.qolmod.input.KeybindManager;
 import java.util.Objects;
 import net.minecraft.client.MinecraftClient;
@@ -52,7 +51,6 @@ public final class QOL {
         featureManager.register(new AutoDuperFeature(automationEngine));
         StorageLabelsFeature storageLabels = new StorageLabelsFeature();
         featureManager.register(storageLabels);
-        featureManager.register(new TestFeature());
         QOLmodClientCommands.register(this, storageLabels);
         configManager.load();
         keybindManager.register();
