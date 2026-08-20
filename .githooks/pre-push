@@ -1,0 +1,47 @@
+#!/bin/sh
+
+# Refuse to push while work exists only in this checkout. Unpushed commits are
+# intentionally allowed: sending those commits to the remote is the push's job.
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf '%s\n' "QOLmod pre-push: unable to inspect the Git working tree." >&2
+    exit 1
+fi
+
+has_tracked_modifications=0
+has_staged_changes=0
+has_untracked_files=0
+
+git diff --quiet --ignore-submodules -- || has_tracked_modifications=1
+git diff --cached --quiet --ignore-submodules -- || has_staged_changes=1
+
+if test -n "$(git ls-files --others --exclude-standard)"; then
+    has_untracked_files=1
+fi
+
+if test "$has_tracked_modifications" -eq 0 \
+    && test "$has_staged_changes" -eq 0 \
+    && test "$has_untracked_files" -eq 0; then
+    exit 0
+fi
+
+printf '\n%s\n' "QOLmod pre-push blocked this push." >&2
+printf '%s\n' "This checkout still contains work that Git cannot send to the other machine:" >&2
+
+if test "$has_tracked_modifications" -ne 0; then
+    printf '%s\n' "  - tracked files have uncommitted modifications" >&2
+fi
+
+if test "$has_staged_changes" -ne 0; then
+    printf '%s\n' "  - staged changes have not been committed" >&2
+fi
+
+if test "$has_untracked_files" -ne 0; then
+    printf '%s\n' "  - untracked files have not been added to Git" >&2
+fi
+
+printf '\n%s\n' "Review the exact files with:" >&2
+printf '%s\n' "  git status --short --untracked-files=all" >&2
+printf '\n%s\n' "Then commit the work (or intentionally stash/remove it) and push again." >&2
+printf '%s\n\n' "After the push, run ./scripts/sync-check before switching machines." >&2
+exit 1
