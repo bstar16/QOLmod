@@ -4,9 +4,6 @@ package com.bstar.qolmod.ui.theme;
 public record GlassStyle(
         int mainTint,
         int drawerTint,
-        int edge,
-        int innerHighlight,
-        int innerShadow,
         int blurPaddingPixels
 ) {
     public GlassStyle {

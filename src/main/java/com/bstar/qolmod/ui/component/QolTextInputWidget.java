@@ -24,7 +24,8 @@ public class QolTextInputWidget extends TextFieldWidget {
         setEditableColor(colors.primaryText());
         setUneditableColor(colors.mutedText());
         context.fill(getX(), getY(), getRight(), getBottom(), colors.elevatedSurface());
-        context.drawStrokedRectangle(getX(), getY(), getWidth(), getHeight(), isFocused() ? colors.accent() : colors.innerBorder());
+        context.drawStrokedRectangle(getX(), getY(), getWidth(), getHeight(),
+                isFocused() ? colors.accent() : colors.subtleDivider());
 
         int verticalOffset = Math.max(0, (getHeight() - VANILLA_TEXT_HEIGHT) / 2);
         context.getMatrices().pushMatrix();

@@ -150,7 +150,12 @@ public final class FramebufferGlassPanelMaterial implements PanelMaterial {
             int clipRight
     ) {
         GlassStyle glass = ThemeManager.active().glass();
-        drawSurface(context, x, y, width, height, clipLeft, clipRight, glass.drawerTint());
+        // The internal settings view already sits over the main panel's correctly aligned glass.
+        // Re-compositing the capture texture here creates a second deferred textured surface with
+        // independent UV/scissor state. Keep the settings material panel-local by layering only its
+        // tint over the existing main glass sample. The screen's existing header/sidebar/footer
+        // dividers already define this internal surface, so it does not need a second outer edge.
+        drawOverlay(context, x, y, width, height, clipLeft, clipRight, glass.drawerTint(), false);
     }
 
     private void drawSurface(
@@ -187,26 +192,38 @@ public final class FramebufferGlassPanelMaterial implements PanelMaterial {
             ));
         }
 
-        GlassStyle glass = ThemeManager.active().glass();
-        context.enableScissor(safeClipLeft, y, safeClipRight, y + height);
-        if (TINT_ENABLED) {
-            context.fill(x, y, x + width, y + height, tint);
-        }
-        drawMaterialEdges(context, x, y, width, height, glass);
-        context.disableScissor();
+        drawOverlay(context, x, y, width, height, safeClipLeft, safeClipRight, tint, true);
 
         if (DEBUG_BOUNDS && captureRegion != null) {
             drawDebugBounds(context, x, y, width, height);
         }
     }
 
-    private void drawMaterialEdges(DrawContext context, int x, int y, int width, int height, GlassStyle glass) {
-        context.fill(x, y, x + width, y + 1, glass.edge());
-        context.fill(x, y + height - 1, x + width, y + height, glass.innerShadow());
-        context.fill(x, y, x + 1, y + height, glass.edge());
-        context.fill(x + width - 1, y, x + width, y + height, glass.innerShadow());
-        context.fill(x + 2, y + 2, x + width - 2, y + 3, glass.innerHighlight());
-        context.fill(x + 2, y + 3, x + 3, y + height - 2, glass.innerHighlight());
+    private void drawOverlay(
+            DrawContext context,
+            int x,
+            int y,
+            int width,
+            int height,
+            int clipLeft,
+            int clipRight,
+            int tint,
+            boolean drawEdges
+    ) {
+        int safeClipLeft = Math.max(x, clipLeft);
+        int safeClipRight = Math.min(x + width, clipRight);
+        if (safeClipRight <= safeClipLeft) {
+            return;
+        }
+
+        context.enableScissor(safeClipLeft, y, safeClipRight, y + height);
+        if (TINT_ENABLED) {
+            context.fill(x, y, x + width, y + height, tint);
+        }
+        if (drawEdges) {
+            UiStroke.border(context, x, y, width, height, ThemeManager.active().colors().outerBorder());
+        }
+        context.disableScissor();
     }
 
     private void drawDebugBounds(DrawContext context, int x, int y, int width, int height) {

@@ -13,11 +13,13 @@ import com.bstar.qolmod.setting.StringSetting;
 import com.bstar.qolmod.ui.animation.AnimatedValue;
 import com.bstar.qolmod.ui.component.QolButtonWidget;
 import com.bstar.qolmod.ui.component.QolLabel;
+import com.bstar.qolmod.ui.component.QolNavigationWidget;
 import com.bstar.qolmod.ui.component.QolSliderWidget;
 import com.bstar.qolmod.ui.component.QolTextInputWidget;
 import com.bstar.qolmod.ui.component.QolToggleWidget;
 import com.bstar.qolmod.ui.render.FramebufferGlassPanelMaterial;
 import com.bstar.qolmod.ui.render.PanelMaterial;
+import com.bstar.qolmod.ui.render.UiStroke;
 import com.bstar.qolmod.ui.theme.ColorPalette;
 import com.bstar.qolmod.ui.theme.ThemeManager;
 import java.util.ArrayList;
@@ -27,6 +29,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.tooltip.Tooltip;
@@ -35,15 +38,14 @@ import net.minecraft.client.input.KeyInput;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
-/** Floating QOLmod interface with panel-local glass and an attached contextual settings drawer. */
+/** Floating QOLmod interface with panel-local glass and in-shell contextual settings. */
 public final class QOLmodScreen extends Screen {
     private static final int HEADER_HEIGHT = 45;
     private static final int FOOTER_HEIGHT = 27;
+    private static final int SETTINGS_HEADER_HEIGHT = 38;
     private static final int SIDEBAR_WIDTH = 112;
     private static final int FEATURE_ROW_HEIGHT = 52;
-    private static final int MIN_ATTACHED_MARGIN = 4;
-    private static final int MIN_DRAWER_WIDTH = 260;
-    private static final int MAX_DRAWER_WIDTH = 360;
+    private static final int MAX_PANEL_WIDTH = 560;
     private static final long DRAWER_DURATION_MS = 210;
     private static final List<String> SPLASHES = List.of(
             "Built around actual gameplay annoyances.",
@@ -65,8 +67,10 @@ public final class QOLmodScreen extends Screen {
     private final String splash;
     private final AnimatedValue drawerAnimation = new AnimatedValue(0.0, DRAWER_DURATION_MS, AnimatedValue.Easing.CUBIC_OUT);
     private final List<FeatureWidgets> featureWidgets = new ArrayList<>();
-    private final List<QolButtonWidget> navigationWidgets = new ArrayList<>();
+    private final List<QolNavigationWidget> navigationWidgets = new ArrayList<>();
     private final List<SettingControl> settingControls = new ArrayList<>();
+    private QolButtonWidget settingsBackButton;
+    private QolButtonWidget closeButton;
     private Page page = Page.FEATURES;
     private QOLFeature drawerFeature;
     private boolean drawerOpen;
@@ -92,6 +96,7 @@ public final class QOLmodScreen extends Screen {
         settingControls.clear();
         addNavigationWidgets();
         addFeatureWidgets();
+        addShellButtons();
         if (drawerFeature != null) {
             addSettingControls(drawerFeature);
         }
@@ -99,18 +104,32 @@ public final class QOLmodScreen extends Screen {
 
     private void addNavigationWidgets() {
         for (Page candidate : Page.values()) {
-            QolButtonWidget button = new QolButtonWidget(
+            QolNavigationWidget button = new QolNavigationWidget(
                     0,
                     0,
                     SIDEBAR_WIDTH - 16,
                     24,
-                    Text.literal(candidate.icon + "   " + candidate.label),
-                    QolButtonWidget.Style.NAVIGATION,
+                    Text.literal(candidate.label),
+                    candidate.icon,
                     () -> page == candidate,
                     () -> selectPage(candidate)
             );
             navigationWidgets.add(addDrawableChild(button));
         }
+    }
+
+    private void addShellButtons() {
+        settingsBackButton = addDrawableChild(new QolButtonWidget(
+                0, 0, 22, 20, Text.literal("<"), QolButtonWidget.Style.ICON, this::closeDrawer
+        ));
+        settingsBackButton.setTooltip(Tooltip.of(Text.literal("Back to features")));
+        settingsBackButton.visible = false;
+        settingsBackButton.active = false;
+
+        closeButton = addDrawableChild(new QolButtonWidget(
+                0, 0, 20, 18, Text.literal("×"), QolButtonWidget.Style.ICON, this::close
+        ));
+        closeButton.setTooltip(Tooltip.of(Text.literal("Close QOLmod")));
     }
 
     private void addFeatureWidgets() {
@@ -217,6 +236,7 @@ public final class QOLmodScreen extends Screen {
         }
         drawerOpen = true;
         drawerAnimation.setTarget(1.0);
+        setFeatureControlsVisible(false);
     }
 
     private void closeDrawer() {
@@ -249,17 +269,8 @@ public final class QOLmodScreen extends Screen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         double drawerProgress = drawerAnimation.value();
-        Layout layout = layout(drawerProgress);
-        int shellLeft = layout.mainX;
-        int shellRight = layout.mainX + layout.mainWidth;
-        if (drawerFeature != null && drawerProgress > 0.002) {
-            // Capture the complete eventual shell while the drawer animates. Only the revealed
-            // part is composited, but keeping capture dimensions stable avoids per-frame GPU
-            // framebuffer reallocations during the short slide animation.
-            shellLeft = Math.min(shellLeft, layout.drawerX);
-            shellRight = Math.max(shellRight, layout.drawerX + layout.drawerWidth);
-        }
-        material.prepareFrame(context, shellLeft, layout.panelY, shellRight - shellLeft, layout.panelHeight);
+        Layout layout = layout();
+        material.prepareFrame(context, layout.mainX, layout.panelY, layout.mainWidth, layout.panelHeight);
         material.drawMainPanel(context, layout.mainX, layout.panelY, layout.mainWidth, layout.panelHeight);
         renderMain(context, layout, mouseX, mouseY, drawerProgress);
         if (drawerFeature != null && drawerProgress > 0.002) {
@@ -277,27 +288,26 @@ public final class QOLmodScreen extends Screen {
         int x = layout.mainX;
         int y = layout.panelY;
         int right = x + layout.mainWidth;
+        boolean settingsContentActive = settingsContentActive(drawerProgress);
 
-        new QolLabel(Text.literal("QUALITY OF LIFE MOD"), colors.primaryText()).draw(context, textRenderer, x + 16, y + 16);
+        UiStroke.horizontal(context, x + 16, Math.min(right - 16, x + 82), y + 2, colors.accentHover());
+        new QolLabel(Text.literal("QUALITY OF LIFE MOD"), colors.primaryText()).draw(context, textRenderer, x + 16, y + 10);
         String metadata = layout.mainWidth < 390 ? "v0.1.0  •  1.21.11" : "v0.1.0  •  Fabric 1.21.11";
-        int metadataX = Math.max(x + 160, right - 16 - textRenderer.getWidth(metadata));
-        context.drawText(textRenderer, metadata, metadataX, y + 17, colors.mutedText(), false);
-        context.fill(x + 10, y + HEADER_HEIGHT - 1, right - 10, y + HEADER_HEIGHT, colors.innerBorder());
-        context.fill(x + SIDEBAR_WIDTH, y + HEADER_HEIGHT + 6, x + SIDEBAR_WIDTH + 1, y + layout.panelHeight - FOOTER_HEIGHT - 6, colors.innerBorder());
+        context.drawText(textRenderer, metadata, x + 16, y + 27, colors.mutedText(), false);
+        int footerY = y + layout.panelHeight - FOOTER_HEIGHT;
+        UiStroke.structuralGrid(context, x + 1, right - 1, y + HEADER_HEIGHT - 1, footerY,
+                x + SIDEBAR_WIDTH, colors.structuralDivider());
 
-        if (page == Page.FEATURES) {
+        if (page == Page.FEATURES && !settingsContentActive) {
             renderFeatures(context, layout, mouseX, mouseY);
-        } else {
+        } else if (page != Page.FEATURES) {
             renderPlaceholder(context, layout, page);
         }
 
-        int footerY = y + layout.panelHeight - FOOTER_HEIGHT;
-        context.fill(x + 10, footerY, right - 10, footerY + 1, colors.innerBorder());
         String credit = "Coded By Codex  •  Designed By bstar";
         context.drawText(textRenderer, credit, right - 14 - textRenderer.getWidth(credit), footerY + 10, colors.mutedText(), false);
 
-        boolean overlayCovered = !layout.drawerAttached && drawerProgress > 0.15;
-        if (!overlayCovered && page == Page.FEATURES) {
+        if (page == Page.FEATURES && !settingsContentActive) {
             int contentLeft = x + SIDEBAR_WIDTH + 16;
             int preferredSplashY = y + HEADER_HEIGHT + 16 + featureWidgets.size() * featureRowHeight(layout) + 12;
             if (preferredSplashY <= footerY - 14) {
@@ -306,7 +316,7 @@ public final class QOLmodScreen extends Screen {
                         trimToWidth(splash, layout.mainWidth - SIDEBAR_WIDTH - 32),
                         contentLeft + (layout.mainWidth - SIDEBAR_WIDTH - 28) / 2,
                         preferredSplashY,
-                        colors.mutedText()
+                        colors.secondaryText()
                 );
             }
         }
@@ -325,7 +335,7 @@ public final class QOLmodScreen extends Screen {
             boolean hovered = mouseX >= left && mouseX < right && mouseY >= rowY && mouseY < rowY + rowHeight - 4;
             context.fill(left, rowY, right, rowY + rowHeight - 4,
                     withAlpha(colors.elevatedSurface(), hovered ? 90 : 57));
-            context.fill(left, rowY + rowHeight - 5, right, rowY + rowHeight - 4, colors.innerBorder());
+            UiStroke.horizontal(context, left, right, rowY + rowHeight - 5, colors.subtleDivider());
             context.drawText(textRenderer, feature.name(), left + 9, rowY + 9, colors.primaryText(), false);
 
             String state = stateLabel(feature);
@@ -359,32 +369,36 @@ public final class QOLmodScreen extends Screen {
         int centerX = contentLeft + contentWidth / 2;
         int centerY = layout.panelY + layout.panelHeight / 2 - 8;
         context.drawCenteredTextWithShadow(textRenderer, selected.label.toUpperCase(Locale.ROOT), centerX, centerY - 10, colors.primaryText());
-        context.drawCenteredTextWithShadow(textRenderer, selected.placeholder, centerX, centerY + 8, colors.mutedText());
+        context.drawCenteredTextWithShadow(textRenderer, selected.placeholder, centerX, centerY + 8,
+                colors.secondaryText());
     }
 
     private void renderDrawer(DrawContext context, Layout layout, int mouseX, int mouseY, double progress) {
         int reveal = Math.max(1, (int) Math.round(layout.drawerWidth * progress));
-        int revealLeft = layout.drawerAttached ? layout.drawerX : layout.drawerX + layout.drawerWidth - reveal;
-        int revealRight = layout.drawerAttached ? layout.drawerX + reveal : layout.drawerX + layout.drawerWidth;
-        context.enableScissor(revealLeft, layout.panelY, revealRight, layout.panelY + layout.panelHeight);
+        int revealLeft = layout.drawerX + layout.drawerWidth - reveal;
+        int revealRight = layout.drawerX + layout.drawerWidth;
+        context.enableScissor(revealLeft, layout.drawerY, revealRight, layout.drawerY + layout.drawerHeight);
         material.drawDrawer(
                 context,
                 layout.drawerX,
-                layout.panelY,
+                layout.drawerY,
                 layout.drawerWidth,
-                layout.panelHeight,
-                layout.drawerAttached,
+                layout.drawerHeight,
+                false,
                 revealLeft,
                 revealRight
         );
 
         ColorPalette colors = ThemeManager.active().colors();
         int contentOffset = (int) Math.round((1.0 - progress) * 18.0);
-        int left = layout.drawerX + 14 + contentOffset;
+        int left = layout.drawerX + 42 + contentOffset;
         int right = layout.drawerX + layout.drawerWidth - 14 + contentOffset;
-        context.drawText(textRenderer, drawerFeature.name(), left, layout.panelY + 15, colors.primaryText(), false);
-        context.drawText(textRenderer, "SETTINGS", right - textRenderer.getWidth("SETTINGS"), layout.panelY + 16, colors.mutedText(), false);
-        context.fill(left, layout.panelY + HEADER_HEIGHT - 1, right, layout.panelY + HEADER_HEIGHT, colors.innerBorder());
+        int titleWidth = Math.max(1, right - textRenderer.getWidth("SETTINGS") - 8 - left);
+        context.drawText(textRenderer, trimToWidth(drawerFeature.name(), titleWidth), left,
+                layout.drawerY + 14, colors.primaryText(), false);
+        context.drawText(textRenderer, "SETTINGS", right - textRenderer.getWidth("SETTINGS"), layout.drawerY + 15, colors.mutedText(), false);
+        UiStroke.horizontal(context, layout.drawerX + 12, layout.drawerX + layout.drawerWidth - 12,
+                layout.drawerY + SETTINGS_HEADER_HEIGHT - 1, colors.structuralDivider());
 
         renderSettingGroups(context, layout, contentOffset);
         context.disableScissor();
@@ -396,10 +410,10 @@ public final class QOLmodScreen extends Screen {
         boolean twoColumns = contentWidth >= 302;
         int gap = twoColumns ? 12 : 0;
         int columnWidth = twoColumns ? (contentWidth - gap) / 2 : contentWidth;
-        int top = layout.panelY + HEADER_HEIGHT + 9 - drawerScroll;
-        int bottom = layout.panelY + layout.panelHeight - 12;
-        context.enableScissor(layout.drawerX + 4, layout.panelY + HEADER_HEIGHT + 2,
-                layout.drawerX + layout.drawerWidth - 4, layout.panelY + layout.panelHeight - 4);
+        int top = layout.drawerY + SETTINGS_HEADER_HEIGHT + 9 - drawerScroll;
+        int bottom = layout.drawerY + layout.drawerHeight - 8;
+        context.enableScissor(layout.drawerX + 4, layout.drawerY + SETTINGS_HEADER_HEIGHT + 2,
+                layout.drawerX + layout.drawerWidth - 4, layout.drawerY + layout.drawerHeight - 4);
 
         if (twoColumns) {
             int leftY = drawSettingGroup(context, SettingGroup.GENERAL, contentLeft, top, columnWidth, bottom);
@@ -443,7 +457,7 @@ public final class QOLmodScreen extends Screen {
         int navY = layout.panelY + HEADER_HEIGHT + 8;
         int navStep = Math.max(19, Math.min(27,
                 (layout.panelHeight - HEADER_HEIGHT - FOOTER_HEIGHT - 10) / Page.values().length));
-        for (QolButtonWidget navigation : navigationWidgets) {
+        for (QolNavigationWidget navigation : navigationWidgets) {
             navigation.setX(navX);
             navigation.setY(navY);
             navigation.setWidth(SIDEBAR_WIDTH - 16);
@@ -451,23 +465,41 @@ public final class QOLmodScreen extends Screen {
             navY += navStep;
         }
 
-        boolean mainControlsVisible = page == Page.FEATURES && (layout.drawerAttached || drawerProgress < 0.08);
+        closeButton.setX(layout.mainX + layout.mainWidth - 28);
+        closeButton.setY(layout.panelY + 9);
+
+        settingsBackButton.setX(layout.drawerX + 10);
+        settingsBackButton.setY(layout.drawerY + 9);
+        settingsBackButton.visible = drawerFeature != null && drawerOpen && drawerProgress > 0.97;
+        settingsBackButton.active = drawerOpen && drawerProgress > 0.985;
+
+        boolean mainControlsVisible = page == Page.FEATURES && !settingsContentActive(drawerProgress);
         int rowY = layout.panelY + HEADER_HEIGHT + 27;
         int rowHeight = featureRowHeight(layout);
         int right = layout.mainX + layout.mainWidth - 14;
         for (FeatureWidgets widgets : featureWidgets) {
             widgets.toggle.setX(right - 55);
             widgets.toggle.setY(rowY + 5);
-            widgets.toggle.visible = mainControlsVisible;
-            widgets.toggle.active = mainControlsVisible;
             widgets.configure.setX(right - 24);
             widgets.configure.setY(rowY + 2);
-            widgets.configure.visible = mainControlsVisible;
-            widgets.configure.active = mainControlsVisible && widgets.feature.hasSettings();
             rowY += rowHeight;
         }
+        setFeatureControlsVisible(mainControlsVisible);
 
         positionSettingControls(layout, drawerProgress);
+    }
+
+    private boolean settingsContentActive(double drawerProgress) {
+        return drawerFeature != null && (drawerOpen || drawerProgress > 0.002);
+    }
+
+    private void setFeatureControlsVisible(boolean visible) {
+        for (FeatureWidgets widgets : featureWidgets) {
+            widgets.toggle.visible = visible;
+            widgets.toggle.active = visible;
+            widgets.configure.visible = visible;
+            widgets.configure.active = visible && widgets.feature.hasSettings();
+        }
     }
 
     private void positionSettingControls(Layout layout, double progress) {
@@ -479,7 +511,7 @@ public final class QOLmodScreen extends Screen {
         boolean twoColumns = contentWidth >= 302;
         int gap = twoColumns ? 12 : 0;
         int columnWidth = twoColumns ? (contentWidth - gap) / 2 : contentWidth;
-        int top = layout.panelY + HEADER_HEIGHT + 9 - drawerScroll;
+        int top = layout.drawerY + SETTINGS_HEADER_HEIGHT + 9 - drawerScroll;
         Map<SettingGroup, Integer> groupY = new EnumMap<>(SettingGroup.class);
         if (twoColumns) {
             groupY.put(SettingGroup.GENERAL, top);
@@ -504,8 +536,8 @@ public final class QOLmodScreen extends Screen {
                 columnX += columnWidth + gap;
             }
             int y = cursor.get(control.group);
-            int viewportTop = layout.panelY + HEADER_HEIGHT + 2;
-            int viewportBottom = layout.panelY + layout.panelHeight - 4;
+            int viewportTop = layout.drawerY + SETTINGS_HEADER_HEIGHT + 2;
+            int viewportBottom = layout.drawerY + layout.drawerHeight - 4;
             boolean rowVisible = visible && y + control.rowHeight() > viewportTop && y < viewportBottom;
             positionControl(control, columnX, y, columnWidth, rowVisible, interactive && rowVisible);
             cursor.put(control.group, y + control.rowHeight());
@@ -562,6 +594,10 @@ public final class QOLmodScreen extends Screen {
     }
 
     private void setDrawerControlsInteractive(boolean interactive, boolean visible) {
+        if (settingsBackButton != null) {
+            settingsBackButton.active = interactive;
+            settingsBackButton.visible = visible;
+        }
         for (SettingControl control : settingControls) {
             for (ClickableWidget widget : control.widgets()) {
                 widget.active = interactive;
@@ -570,37 +606,71 @@ public final class QOLmodScreen extends Screen {
         }
     }
 
-    private Layout layout(double progress) {
+    private Layout layout() {
         int margin = Math.max(10, Math.min(18, width / 40));
-        int mainWidth = Math.max(286, Math.min(500, width - margin * 2));
+        int mainWidth = Math.max(286, Math.min(MAX_PANEL_WIDTH, width - margin * 2));
         int panelHeight = Math.max(214, Math.min(360, height - margin * 2));
         panelHeight = Math.min(panelHeight, height - 4);
-        int centeredMainX = (width - mainWidth) / 2;
-        boolean attached = width >= mainWidth + MIN_DRAWER_WIDTH + MIN_ATTACHED_MARGIN * 2;
-        int drawerWidth;
-        int mainX;
-        if (attached) {
-            int attachedMargin = width >= mainWidth + MAX_DRAWER_WIDTH + margin * 2
-                    ? margin
-                    : MIN_ATTACHED_MARGIN;
-            drawerWidth = Math.min(MAX_DRAWER_WIDTH, width - mainWidth - attachedMargin * 2);
-            int centeredCombinedX = (width - mainWidth - drawerWidth) / 2;
-            mainX = (int) Math.round(centeredMainX + (centeredCombinedX - centeredMainX) * progress);
-        } else {
-            drawerWidth = Math.max(MIN_DRAWER_WIDTH, Math.min(MAX_DRAWER_WIDTH, mainWidth - SIDEBAR_WIDTH));
-            mainX = centeredMainX;
-        }
+        int mainX = (width - mainWidth) / 2;
         int panelY = Math.max(2, (height - panelHeight) / 2);
-        int drawerX = attached ? mainX + mainWidth : mainX + mainWidth - drawerWidth;
-        return new Layout(mainX, panelY, mainWidth, panelHeight, drawerX, drawerWidth, attached);
+        int drawerX = mainX + SIDEBAR_WIDTH + 1;
+        int drawerY = panelY + HEADER_HEIGHT;
+        int drawerWidth = Math.max(1, mainWidth - SIDEBAR_WIDTH - 2);
+        int drawerHeight = Math.max(1, panelHeight - HEADER_HEIGHT - FOOTER_HEIGHT);
+        return new Layout(mainX, panelY, mainWidth, panelHeight, drawerX, drawerY, drawerWidth, drawerHeight);
+    }
+
+    @Override
+    public boolean mouseClicked(Click click, boolean doubled) {
+        if (super.mouseClicked(click, doubled)) {
+            return true;
+        }
+        if (page != Page.FEATURES || settingsContentActive(drawerAnimation.value())) {
+            return false;
+        }
+
+        FeatureWidgets row = featureRowAt(click.x(), click.y());
+        if (row == null) {
+            return false;
+        }
+        if (click.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            featureManager.setEnabled(row.feature, !row.feature.isEnabled());
+            configManager.save();
+            return true;
+        }
+        if (click.button() == GLFW.GLFW_MOUSE_BUTTON_RIGHT && row.feature.hasSettings()) {
+            openDrawer(row.feature);
+            return true;
+        }
+        return false;
+    }
+
+    private FeatureWidgets featureRowAt(double mouseX, double mouseY) {
+        Layout layout = layout();
+        int left = layout.mainX + SIDEBAR_WIDTH + 14;
+        int right = layout.mainX + layout.mainWidth - 14;
+        if (mouseX < left || mouseX >= right) {
+            return null;
+        }
+
+        int rowY = layout.panelY + HEADER_HEIGHT + 27;
+        int rowHeight = featureRowHeight(layout);
+        for (FeatureWidgets widgets : featureWidgets) {
+            if (mouseY >= rowY && mouseY < rowY + rowHeight - 4) {
+                return widgets;
+            }
+            rowY += rowHeight;
+        }
+        return null;
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         double progress = drawerAnimation.value();
-        Layout layout = layout(progress);
+        Layout layout = layout();
         if (drawerFeature != null && progress > 0.98
-                && mouseX >= layout.drawerX && mouseX < layout.drawerX + layout.drawerWidth) {
+                && mouseX >= layout.drawerX && mouseX < layout.drawerX + layout.drawerWidth
+                && mouseY >= layout.drawerY && mouseY < layout.drawerY + layout.drawerHeight) {
             int maxScroll = maxDrawerScroll(layout);
             drawerScroll = Math.max(0, Math.min(maxScroll, drawerScroll - (int) Math.round(verticalAmount * 22.0)));
             return true;
@@ -624,7 +694,7 @@ public final class QOLmodScreen extends Screen {
             }
             contentHeight = y;
         }
-        int available = layout.panelHeight - HEADER_HEIGHT - 16;
+        int available = layout.drawerHeight - SETTINGS_HEADER_HEIGHT - 12;
         return Math.max(0, contentHeight - available);
     }
 
@@ -801,17 +871,17 @@ public final class QOLmodScreen extends Screen {
     }
 
     private enum Page {
-        FEATURES("F", "Features", "Gameplay improvements live here."),
-        HUD("H", "HUD", "HUD tools are planned for a later stage."),
-        KEYBINDS("K", "Keybinds", "Use Minecraft Controls for current bindings."),
-        SETTINGS("S", "Settings", "Theme customisation arrives in Stage 2."),
-        ABOUT("i", "About", "Small improvements. Better gameplay.");
+        FEATURES(QolNavigationWidget.Icon.FEATURES, "Features", "Gameplay improvements live here."),
+        HUD(QolNavigationWidget.Icon.HUD, "HUD", "HUD tools are planned for a later stage."),
+        KEYBINDS(QolNavigationWidget.Icon.KEYBINDS, "Keybinds", "Use Minecraft Controls for current bindings."),
+        SETTINGS(QolNavigationWidget.Icon.SETTINGS, "Settings", "Theme customisation arrives in Stage 2."),
+        ABOUT(QolNavigationWidget.Icon.ABOUT, "About", "Small improvements. Better gameplay.");
 
-        private final String icon;
+        private final QolNavigationWidget.Icon icon;
         private final String label;
         private final String placeholder;
 
-        Page(String icon, String label, String placeholder) {
+        Page(QolNavigationWidget.Icon icon, String label, String placeholder) {
             this.icon = icon;
             this.label = label;
             this.placeholder = placeholder;
@@ -836,8 +906,9 @@ public final class QOLmodScreen extends Screen {
             int mainWidth,
             int panelHeight,
             int drawerX,
+            int drawerY,
             int drawerWidth,
-            boolean drawerAttached
+            int drawerHeight
     ) {
     }
 

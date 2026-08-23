@@ -68,4 +68,29 @@ final class FramebufferRegionTest {
         assertEquals(0.0, uv.uLeft(), 0.00001);
         assertEquals(1.0, uv.vTop(), 0.00001);
     }
+
+    @Test
+    void nestedSettingsSurfaceStaysWithinTheMainPanelCapture() {
+        int framebufferWidth = 1920;
+        int framebufferHeight = 1080;
+        int guiWidth = 960;
+        int guiHeight = 540;
+        FramebufferRegion region = FramebufferRegion.capture(
+                200, 90, 560, 360, 12,
+                framebufferWidth, framebufferHeight, guiWidth, guiHeight
+        );
+
+        FramebufferRegion.SurfaceUv uv = region.uvFor(313, 135, 446, 288);
+        double sampledLeft = region.left() + uv.uLeft() * region.width();
+        double sampledRight = region.left() + uv.uRight() * region.width();
+        double sampledTop = region.bottom() - uv.vTop() * region.height();
+        double sampledBottom = region.bottom() - uv.vBottom() * region.height();
+
+        assertEquals(313 * 2.0, sampledLeft, 0.0001);
+        assertEquals((313 + 446) * 2.0, sampledRight, 0.0001);
+        assertEquals(135 * 2.0, sampledTop, 0.0001);
+        assertEquals((135 + 288) * 2.0, sampledBottom, 0.0001);
+        assertTrue(uv.uLeft() >= 0.0f && uv.uRight() <= 1.0f);
+        assertTrue(uv.vBottom() >= 0.0f && uv.vTop() <= 1.0f);
+    }
 }

@@ -80,7 +80,7 @@ public final class QolButtonWidget extends ClickableWidget {
         if (chosen && style == Style.NAVIGATION) {
             context.fill(getX(), getY() + 3, getX() + 2, getBottom() - 3, colors.accent());
         } else if (style == Style.STANDARD) {
-            drawBorder(context, isFocused() ? colors.accent() : colors.innerBorder());
+            drawBorder(context, isFocused() ? colors.accent() : colors.subtleDivider());
         }
         int textColor = active ? (chosen ? colors.primaryText() : colors.secondaryText()) : colors.mutedText();
         int textX = style == Style.NAVIGATION ? getX() + 9 : getX() + (getWidth() - MinecraftClient.getInstance().textRenderer.getWidth(getMessage())) / 2;
