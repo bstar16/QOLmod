@@ -12,6 +12,8 @@ import com.bstar.qolmod.feature.QOLFeature;
 import com.bstar.qolmod.feature.ResetReason;
 import com.bstar.qolmod.feature.dupe.AutoDuperConfig;
 import com.bstar.qolmod.feature.dupe.AutoDuperWorkflow;
+import com.bstar.qolmod.feature.dupe.AutoDuperStatusPublisher;
+import com.bstar.qolmod.hud.status.StatusRegistry;
 import com.bstar.qolmod.setting.BooleanSetting;
 import com.bstar.qolmod.setting.DoubleSetting;
 import com.bstar.qolmod.setting.IntSetting;
@@ -93,12 +95,14 @@ public final class AutoDuperFeature extends QOLFeature {
             dismountDelay
     );
     private final AutomationEngine automation;
+    private final AutoDuperStatusPublisher statusPublisher;
     private AutoDuperWorkflow workflow;
     private String startFailure;
 
-    public AutoDuperFeature(AutomationEngine automation) {
+    public AutoDuperFeature(AutomationEngine automation, StatusRegistry statusRegistry) {
         super("auto-duper", "Auto Duper", "Automatically dupes items using the donkey method.");
         this.automation = Objects.requireNonNull(automation, "automation");
+        statusPublisher = new AutoDuperStatusPublisher(statusRegistry);
     }
 
     @Override
@@ -108,9 +112,11 @@ public final class AutoDuperFeature extends QOLFeature {
         AutomationStartResult result = automation.start(workflow);
         listen(ClientTickEvent.class, event -> syncWorkflowStatus());
         if (result.started()) {
+            statusPublisher.publish(automation.status(), workflow);
             updateStatus(workflowStatus(FeatureState.RUNNING, "Starting AutoDuper"));
         } else {
             startFailure = result.message();
+            statusPublisher.publishStartFailure(startFailure);
             updateStatus(FeatureStatus.detailed(FeatureState.ERROR, "AutoDuper could not start", startFailure));
         }
     }
@@ -121,6 +127,7 @@ public final class AutoDuperFeature extends QOLFeature {
                 && isOwnWorkflowRunning()) {
             automation.cancel();
         }
+        publishOwnAutomationStatus();
         workflow = null;
         startFailure = null;
     }
@@ -141,6 +148,7 @@ public final class AutoDuperFeature extends QOLFeature {
 
         if (automationStatus.state() == AutomationState.RUNNING
                 || automationStatus.state() == AutomationState.WAITING) {
+            statusPublisher.publish(automationStatus, workflow);
             FeatureState state = automationStatus.state() == AutomationState.WAITING
                     ? FeatureState.WAITING
                     : FeatureState.RUNNING;
@@ -150,6 +158,7 @@ public final class AutoDuperFeature extends QOLFeature {
 
         AutomationStopReason stopReason = automationStatus.stopReason().orElse(AutomationStopReason.ERROR);
         String detail = automationStatus.detail().orElse(stopReason.name());
+        statusPublisher.publish(automationStatus, workflow);
         if (stopReason == AutomationStopReason.COMPLETED) {
             sendMessage("Completed all " + workflow.completedCycles() + " cycles - stopping");
             updateStatus(FeatureStatus.detailed(FeatureState.COMPLETED, "AutoDuper complete", detail));
@@ -170,6 +179,17 @@ public final class AutoDuperFeature extends QOLFeature {
     private boolean isOwnWorkflowRunning() {
         return automation.isRunning()
                 && automation.status().workflowId().filter(AutoDuperWorkflow.ID::equals).isPresent();
+    }
+
+    private void publishOwnAutomationStatus() {
+        if (workflow == null) {
+            return;
+        }
+        AutomationStatus automationStatus = automation.status();
+        if (automationStatus.workflowId().filter(AutoDuperWorkflow.ID::equals).isPresent()
+                && automationStatus.state() != AutomationState.IDLE) {
+            statusPublisher.publish(automationStatus, workflow);
+        }
     }
 
     private FeatureStatus workflowStatus(FeatureState state, String activity) {

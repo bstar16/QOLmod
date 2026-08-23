@@ -5,6 +5,7 @@ import com.bstar.qolmod.feature.FeatureState;
 import com.bstar.qolmod.feature.FeatureStatus;
 import com.bstar.qolmod.feature.FeatureManager;
 import com.bstar.qolmod.feature.QOLFeature;
+import com.bstar.qolmod.hud.HudManager;
 import com.bstar.qolmod.setting.BooleanSetting;
 import com.bstar.qolmod.setting.DoubleSetting;
 import com.bstar.qolmod.setting.IntSetting;
@@ -63,6 +64,7 @@ public final class QOLmodScreen extends Screen {
     private final Screen parent;
     private final FeatureManager featureManager;
     private final ConfigManager configManager;
+    private final HudManager hudManager;
     private final PanelMaterial material;
     private final String splash;
     private final AnimatedValue drawerAnimation = new AnimatedValue(0.0, DRAWER_DURATION_MS, AnimatedValue.Easing.CUBIC_OUT);
@@ -71,20 +73,33 @@ public final class QOLmodScreen extends Screen {
     private final List<SettingControl> settingControls = new ArrayList<>();
     private QolButtonWidget settingsBackButton;
     private QolButtonWidget closeButton;
+    private QolToggleWidget statusHudToggle;
     private Page page = Page.FEATURES;
     private QOLFeature drawerFeature;
     private boolean drawerOpen;
     private int drawerScroll;
 
-    public QOLmodScreen(Screen parent, FeatureManager featureManager, ConfigManager configManager) {
-        this(parent, featureManager, configManager, new FramebufferGlassPanelMaterial());
+    public QOLmodScreen(
+            Screen parent,
+            FeatureManager featureManager,
+            ConfigManager configManager,
+            HudManager hudManager
+    ) {
+        this(parent, featureManager, configManager, hudManager, new FramebufferGlassPanelMaterial());
     }
 
-    QOLmodScreen(Screen parent, FeatureManager featureManager, ConfigManager configManager, PanelMaterial material) {
+    QOLmodScreen(
+            Screen parent,
+            FeatureManager featureManager,
+            ConfigManager configManager,
+            HudManager hudManager,
+            PanelMaterial material
+    ) {
         super(Text.literal("QUALITY OF LIFE MOD"));
         this.parent = parent;
         this.featureManager = Objects.requireNonNull(featureManager, "featureManager");
         this.configManager = Objects.requireNonNull(configManager, "configManager");
+        this.hudManager = Objects.requireNonNull(hudManager, "hudManager");
         this.material = Objects.requireNonNull(material, "material");
         splash = SPLASHES.get(ThreadLocalRandom.current().nextInt(SPLASHES.size()));
     }
@@ -96,6 +111,7 @@ public final class QOLmodScreen extends Screen {
         settingControls.clear();
         addNavigationWidgets();
         addFeatureWidgets();
+        addHudWidgets();
         addShellButtons();
         if (drawerFeature != null) {
             addSettingControls(drawerFeature);
@@ -130,6 +146,22 @@ public final class QOLmodScreen extends Screen {
                 0, 0, 20, 18, Text.literal("×"), QolButtonWidget.Style.ICON, this::close
         ));
         closeButton.setTooltip(Tooltip.of(Text.literal("Close QOLmod")));
+    }
+
+    private void addHudWidgets() {
+        statusHudToggle = addDrawableChild(new QolToggleWidget(
+                0,
+                0,
+                () -> hudManager.config().contextualStatus().enabled(),
+                enabled -> {
+                    hudManager.config().contextualStatus().setEnabled(enabled);
+                    configManager.save();
+                },
+                Text.literal("Toggle Contextual Status HUD")
+        ));
+        statusHudToggle.setTooltip(Tooltip.of(Text.literal(
+                "Show contextual cards while gameplay tasks are active"
+        )));
     }
 
     private void addFeatureWidgets() {
@@ -300,6 +332,8 @@ public final class QOLmodScreen extends Screen {
 
         if (page == Page.FEATURES && !settingsContentActive) {
             renderFeatures(context, layout, mouseX, mouseY);
+        } else if (page == Page.HUD) {
+            renderHudPage(context, layout);
         } else if (page != Page.FEATURES) {
             renderPlaceholder(context, layout, page);
         }
@@ -371,6 +405,24 @@ public final class QOLmodScreen extends Screen {
         context.drawCenteredTextWithShadow(textRenderer, selected.label.toUpperCase(Locale.ROOT), centerX, centerY - 10, colors.primaryText());
         context.drawCenteredTextWithShadow(textRenderer, selected.placeholder, centerX, centerY + 8,
                 colors.secondaryText());
+    }
+
+    private void renderHudPage(DrawContext context, Layout layout) {
+        ColorPalette colors = ThemeManager.active().colors();
+        int left = layout.mainX + SIDEBAR_WIDTH + 14;
+        int right = layout.mainX + layout.mainWidth - 14;
+        int top = layout.panelY + HEADER_HEIGHT + 12;
+        context.drawText(textRenderer, "HUD", left, top, colors.mutedText(), false);
+
+        int rowY = top + 15;
+        context.fill(left, rowY, right, rowY + 43, withAlpha(colors.elevatedSurface(), 57));
+        context.drawText(textRenderer, "Contextual Status HUD", left + 9, rowY + 9, colors.primaryText(), false);
+        context.drawText(textRenderer, "Task status cards in the upper-right", left + 9, rowY + 27,
+                colors.secondaryText(), false);
+        String value = hudManager.config().contextualStatus().enabled() ? "ON" : "OFF";
+        int valueColor = hudManager.config().contextualStatus().enabled() ? colors.active() : colors.mutedText();
+        context.drawText(textRenderer, value, right - 46 - textRenderer.getWidth(value), rowY + 9, valueColor, false);
+        UiStroke.horizontal(context, left, right, rowY + 43, colors.subtleDivider());
     }
 
     private void renderDrawer(DrawContext context, Layout layout, int mouseX, int mouseY, double progress) {
@@ -485,6 +537,12 @@ public final class QOLmodScreen extends Screen {
             rowY += rowHeight;
         }
         setFeatureControlsVisible(mainControlsVisible);
+
+        boolean hudControlsVisible = page == Page.HUD && !settingsContentActive(drawerProgress);
+        statusHudToggle.setX(right - 39);
+        statusHudToggle.setY(layout.panelY + HEADER_HEIGHT + 32);
+        statusHudToggle.visible = hudControlsVisible;
+        statusHudToggle.active = hudControlsVisible;
 
         positionSettingControls(layout, drawerProgress);
     }
@@ -872,7 +930,7 @@ public final class QOLmodScreen extends Screen {
 
     private enum Page {
         FEATURES(QolNavigationWidget.Icon.FEATURES, "Features", "Gameplay improvements live here."),
-        HUD(QolNavigationWidget.Icon.HUD, "HUD", "HUD tools are planned for a later stage."),
+        HUD(QolNavigationWidget.Icon.HUD, "HUD", "Contextual gameplay status."),
         KEYBINDS(QolNavigationWidget.Icon.KEYBINDS, "Keybinds", "Use Minecraft Controls for current bindings."),
         SETTINGS(QolNavigationWidget.Icon.SETTINGS, "Settings", "Theme customisation arrives in Stage 2."),
         ABOUT(QolNavigationWidget.Icon.ABOUT, "About", "Small improvements. Better gameplay.");

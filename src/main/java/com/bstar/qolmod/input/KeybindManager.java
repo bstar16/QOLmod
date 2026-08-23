@@ -8,6 +8,7 @@ import com.bstar.qolmod.event.QOLEventBus;
 import com.bstar.qolmod.event.events.ClientTickEvent;
 import com.bstar.qolmod.feature.FeatureManager;
 import com.bstar.qolmod.ui.QOLmodScreen;
+import com.bstar.qolmod.hud.HudManager;
 import java.util.Objects;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
@@ -29,6 +30,7 @@ public final class KeybindManager {
     private final QOLEventBus eventBus;
     private final FeatureManager featureManager;
     private final ConfigManager configManager;
+    private final HudManager hudManager;
     private KeyBinding openConfigKey;
     private KeyBinding toggleAutoDuperKey;
     private EventSubscription tickSubscription;
@@ -38,12 +40,14 @@ public final class KeybindManager {
             QOLContext context,
             QOLEventBus eventBus,
             FeatureManager featureManager,
-            ConfigManager configManager
+            ConfigManager configManager,
+            HudManager hudManager
     ) {
         this.context = Objects.requireNonNull(context, "context");
         this.eventBus = Objects.requireNonNull(eventBus, "eventBus");
         this.featureManager = Objects.requireNonNull(featureManager, "featureManager");
         this.configManager = Objects.requireNonNull(configManager, "configManager");
+        this.hudManager = Objects.requireNonNull(hudManager, "hudManager");
     }
 
     public void register() {
@@ -89,7 +93,7 @@ public final class KeybindManager {
     private void onClientTick(ClientTickEvent event) {
         while (openConfigKey.wasPressed()) {
             if (context.currentScreen() == null) {
-                context.client().setScreen(new QOLmodScreen(null, featureManager, configManager));
+                context.client().setScreen(new QOLmodScreen(null, featureManager, configManager, hudManager));
             }
         }
         if (suppressAutoDuperToggleQueue) {
