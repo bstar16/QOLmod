@@ -7,7 +7,7 @@ import com.bstar.qolmod.event.EventSubscription;
 import com.bstar.qolmod.event.QOLEventBus;
 import com.bstar.qolmod.event.events.ClientTickEvent;
 import com.bstar.qolmod.feature.FeatureManager;
-import com.bstar.qolmod.gui.QOLmodScreen;
+import com.bstar.qolmod.ui.QOLmodScreen;
 import java.util.Objects;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
@@ -31,7 +31,6 @@ public final class KeybindManager {
     private final ConfigManager configManager;
     private KeyBinding openConfigKey;
     private KeyBinding toggleAutoDuperKey;
-    private KeyBinding toggleTestFeatureKey;
     private EventSubscription tickSubscription;
     private boolean suppressAutoDuperToggleQueue;
 
@@ -64,12 +63,6 @@ public final class KeybindManager {
                 GLFW.GLFW_KEY_B,
                 KEY_CATEGORY
         ));
-        toggleTestFeatureKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.qolmod.toggle_test_feature",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_UNKNOWN,
-                KEY_CATEGORY
-        ));
         ScreenEvents.BEFORE_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
             if (screen instanceof HorseScreen) {
                 ScreenKeyboardEvents.allowKeyPress(screen).register(this::allowHorseScreenKeyPress);
@@ -83,7 +76,6 @@ public final class KeybindManager {
         suppressAutoDuperToggleQueue = false;
         drain(openConfigKey);
         drain(toggleAutoDuperKey);
-        drain(toggleTestFeatureKey);
     }
 
     public void shutdown() {
@@ -107,10 +99,6 @@ public final class KeybindManager {
             while (toggleAutoDuperKey.wasPressed()) {
                 toggleAutoDuper();
             }
-        }
-        while (toggleTestFeatureKey.wasPressed()) {
-            featureManager.toggle("test");
-            configManager.save();
         }
     }
 

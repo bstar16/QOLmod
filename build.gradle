@@ -20,7 +20,9 @@ repositories {
 loom {
     runs {
         client {
-            programArgs '--username', 'MapArtDev'
+            if (project.hasProperty('dev_username')) {
+                programArgs '--username', project.property('dev_username')
+            }
         }
     }
 }

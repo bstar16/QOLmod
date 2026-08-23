@@ -1,0 +1,67 @@
+#!/bin/sh
+
+# Report whether all work in this checkout is represented by the upstream
+# branch. Compatible with macOS /bin/sh and the shell included with Git Bash.
+
+if ! repository_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+    printf '%s\n' "NOT SAFE TO SWITCH MACHINES"
+    printf '%s\n' "Reason: this command is not running inside a Git repository."
+    exit 1
+fi
+
+cd "$repository_root" || exit 1
+
+branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || printf '%s' "DETACHED HEAD")
+upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)
+
+tracked_modifications=$(git diff --name-only --ignore-submodules -- | sed '/^$/d' | wc -l | tr -d '[:space:]')
+staged_changes=$(git diff --cached --name-only --ignore-submodules -- | sed '/^$/d' | wc -l | tr -d '[:space:]')
+untracked_files=$(git ls-files --others --exclude-standard | sed '/^$/d' | wc -l | tr -d '[:space:]')
+
+if test -n "$upstream"; then
+    unpushed_commits=$(git rev-list --count "${upstream}..HEAD" 2>/dev/null || printf '%s' "UNKNOWN")
+else
+    upstream="NONE"
+    unpushed_commits="UNKNOWN"
+fi
+
+printf '%s\n' "QOLmod cross-machine sync check"
+printf '%s\n' "Repository:            $repository_root"
+printf '%s\n' "Branch:                $branch"
+printf '%s\n' "Upstream:              $upstream"
+printf '%s\n' "Tracked modifications: $tracked_modifications"
+printf '%s\n' "Staged changes:        $staged_changes"
+printf '%s\n' "Untracked files:       $untracked_files"
+printf '%s\n' "Unpushed commits:      $unpushed_commits"
+printf '\n'
+
+if test "$tracked_modifications" -eq 0 \
+    && test "$staged_changes" -eq 0 \
+    && test "$untracked_files" -eq 0 \
+    && test "$unpushed_commits" = "0"; then
+    printf '%s\n' "SAFE TO SWITCH MACHINES"
+    exit 0
+fi
+
+printf '%s\n' "NOT SAFE TO SWITCH MACHINES"
+
+if test "$tracked_modifications" -ne 0; then
+    printf '%s\n' "  - Commit or stash the tracked modifications."
+fi
+
+if test "$staged_changes" -ne 0; then
+    printf '%s\n' "  - Commit or unstage the staged changes."
+fi
+
+if test "$untracked_files" -ne 0; then
+    printf '%s\n' "  - Add and commit the untracked files, or intentionally remove them."
+fi
+
+if test "$unpushed_commits" = "UNKNOWN"; then
+    printf '%s\n' "  - Set an upstream branch, then push and run this check again."
+elif test "$unpushed_commits" -ne 0; then
+    printf '%s\n' "  - Push the $unpushed_commits unpushed commit(s), then run this check again."
+fi
+
+printf '%s\n' "  - Inspect details with: git status --short --branch --untracked-files=all"
+exit 1
