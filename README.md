@@ -1,6 +1,6 @@
 # QOLmod
 
-QOLmod is a small, client-side quality-of-life mod for Minecraft 1.21.11. It uses Java 21, Fabric Loader, and Fabric API, with no Meteor Client dependency.
+QOLmod is a small, client-side quality-of-life mod for Minecraft 1.21.11. It uses Java 21, Fabric Loader, and Fabric API.
 
 QOLmod doesn't add features because clients are expected to have them. Features exist because something encountered during real gameplay could be made better.
 
