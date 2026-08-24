@@ -1,10 +1,14 @@
 package com.bstar.qolmod.hud.widgets;
 
-import com.bstar.qolmod.hud.HudAnchor;
 import com.bstar.qolmod.hud.HudContext;
+import com.bstar.qolmod.hud.HudPlacement;
 import com.bstar.qolmod.hud.HudPosition;
-import com.bstar.qolmod.hud.HudWidget;
 import com.bstar.qolmod.hud.HudWidgetConfig;
+import com.bstar.qolmod.hud.editor.EditableHudWidget;
+import com.bstar.qolmod.hud.editor.HudEditorMetadata;
+import com.bstar.qolmod.hud.editor.HudGeometry;
+import com.bstar.qolmod.hud.editor.HudRect;
+import com.bstar.qolmod.hud.editor.HudSize;
 import com.bstar.qolmod.hud.render.GlassHudSurface;
 import com.bstar.qolmod.hud.render.HudSurface;
 import com.bstar.qolmod.hud.status.StatusCardData;
@@ -20,7 +24,7 @@ import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 
 /** Feature-neutral renderer for an ordered vertical stack of contextual status cards. */
-public final class StatusStackWidget implements HudWidget {
+public final class StatusStackWidget implements EditableHudWidget {
     private static final int CARD_WIDTH = 184;
     private static final int CARD_HEIGHT = 54;
     private static final int CARD_GAP = 6;
@@ -29,6 +33,7 @@ public final class StatusStackWidget implements HudWidget {
     private final StatusRegistry registry;
     private final HudWidgetConfig config;
     private final HudSurface surface;
+    private final HudEditorMetadata editorMetadata;
 
     public StatusStackWidget(StatusRegistry registry, HudWidgetConfig config) {
         this(registry, config, new GlassHudSurface());
@@ -38,6 +43,7 @@ public final class StatusStackWidget implements HudWidget {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.config = Objects.requireNonNull(config, "config");
         this.surface = Objects.requireNonNull(surface, "surface");
+        editorMetadata = new HudEditorMetadata(id(), "Contextual Status HUD", "contextualStatus", config);
     }
 
     @Override
@@ -48,6 +54,28 @@ public final class StatusStackWidget implements HudWidget {
     @Override
     public HudWidgetConfig config() {
         return config;
+    }
+
+    @Override
+    public HudEditorMetadata editorMetadata() {
+        return editorMetadata;
+    }
+
+    @Override
+    public HudSize previewSize(net.minecraft.client.MinecraftClient client) {
+        return new HudSize(CARD_WIDTH, CARD_HEIGHT);
+    }
+
+    @Override
+    public void renderPreview(DrawContext context, net.minecraft.client.MinecraftClient client, double opacity) {
+        StatusCardData preview = StatusCardData.of(
+                "editor:status-preview",
+                "Auto Duper",
+                "Moving duplicated items",
+                StatusState.ACTIVE,
+                StatusProgress.finite(4, 20, "Cycle")
+        );
+        renderCard(context, client.textRenderer, preview, 0, 0, opacity);
     }
 
     @Override
@@ -63,11 +91,30 @@ public final class StatusStackWidget implements HudWidget {
         HudPosition position = config.position();
         double scale = position.scale();
         int stackHeight = statuses.size() * CARD_HEIGHT + (statuses.size() - 1) * CARD_GAP;
-        int originX = horizontalOrigin(position, hudContext.screenWidth(), scale);
-        int originY = verticalOrigin(position, hudContext.screenHeight(), stackHeight, scale);
+        HudRect placement;
+        if (position.equals(config.defaultPosition())) {
+            HudPlacement allocated = hudContext.layout().place(position, CARD_WIDTH, stackHeight, 0);
+            placement = HudGeometry.clampRect(
+                    allocated.x(),
+                    allocated.y(),
+                    (int) Math.ceil(CARD_WIDTH * scale),
+                    (int) Math.ceil(stackHeight * scale),
+                    hudContext.screenWidth(),
+                    hudContext.screenHeight(),
+                    4
+            );
+        } else {
+            placement = HudGeometry.clampedScreenRect(
+                    position,
+                    new HudSize(CARD_WIDTH, stackHeight),
+                    hudContext.screenWidth(),
+                    hudContext.screenHeight(),
+                    4
+            );
+        }
         DrawContext context = hudContext.drawContext();
         context.getMatrices().pushMatrix();
-        context.getMatrices().translate(originX, originY);
+        context.getMatrices().translate(placement.x(), placement.y());
         context.getMatrices().scale((float) scale, (float) scale);
         try {
             long now = System.currentTimeMillis();
@@ -159,20 +206,6 @@ public final class StatusStackWidget implements HudWidget {
 
     private String prefix(String label) {
         return label.isBlank() ? "" : label + " ";
-    }
-
-    private int horizontalOrigin(HudPosition position, int screenWidth, double scale) {
-        return switch (position.anchor()) {
-            case TOP_RIGHT, BOTTOM_RIGHT -> screenWidth - position.xOffset() - (int) Math.ceil(CARD_WIDTH * scale);
-            case TOP_LEFT, BOTTOM_LEFT -> position.xOffset();
-        };
-    }
-
-    private int verticalOrigin(HudPosition position, int screenHeight, int stackHeight, double scale) {
-        return switch (position.anchor()) {
-            case BOTTOM_LEFT, BOTTOM_RIGHT -> screenHeight - position.yOffset() - (int) Math.ceil(stackHeight * scale);
-            case TOP_LEFT, TOP_RIGHT -> position.yOffset();
-        };
     }
 
     private double lifecycleAlpha(VisibleStatus status, long now) {

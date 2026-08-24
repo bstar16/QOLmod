@@ -7,7 +7,10 @@ import com.bstar.qolmod.hud.HudAnchor;
 import com.bstar.qolmod.hud.HudManager;
 import com.bstar.qolmod.hud.HudPosition;
 import com.bstar.qolmod.hud.HudWidgetConfig;
+import com.bstar.qolmod.hud.editor.EditableHudWidget;
 import com.bstar.qolmod.setting.Setting;
+import com.bstar.qolmod.ui.theme.AppearanceConfig;
+import com.bstar.qolmod.ui.theme.ThemeManager;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
@@ -23,13 +26,14 @@ import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 
 public final class ConfigManager {
-    private static final int CONFIG_VERSION = 2;
+    private static final int CONFIG_VERSION = 7;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final FeatureManager featureManager;
     private final HudManager hudManager;
     private final Logger logger;
     private final Path configPath;
+    private AppearanceConfig appearance = AppearanceConfig.defaults();
 
     public ConfigManager(FeatureManager featureManager, HudManager hudManager, Logger logger) {
         this(
@@ -45,10 +49,12 @@ public final class ConfigManager {
         this.hudManager = Objects.requireNonNull(hudManager, "hudManager");
         this.logger = Objects.requireNonNull(logger, "logger");
         this.configPath = Objects.requireNonNull(configPath, "configPath");
+        ThemeManager.applyAppearance(appearance);
     }
 
     public void load() {
         if (!Files.exists(configPath)) {
+            logger.info("QOLmod config not found; using defaults.");
             return;
         }
 
@@ -69,7 +75,9 @@ public final class ConfigManager {
                 );
             }
 
-            loadHud(getObject(root, "hud"));
+            appearance = AppearanceConfigJson.read(getObject(root, "appearance"), AppearanceConfig.defaults());
+            ThemeManager.applyAppearance(appearance);
+            loadHud(getObject(root, "hud"), configVersion);
             JsonObject features = getObject(root, "features");
             if (features == null) {
                 logger.warn("QOLmod config has no features object; using feature defaults.");
@@ -78,6 +86,7 @@ public final class ConfigManager {
                     loadFeature(features, feature);
                 }
             }
+            logger.info("QOLmod config loaded (version {}).", configVersion);
         } catch (RuntimeException | IOException exception) {
             logger.warn("Failed to load QOLmod config, using defaults where necessary.", exception);
         }
@@ -89,6 +98,7 @@ public final class ConfigManager {
         root.addProperty("configVersion", CONFIG_VERSION);
         root.add("features", features);
         root.add("hud", saveHud());
+        root.add("appearance", AppearanceConfigJson.write(appearance));
 
         for (QOLFeature feature : featureManager.all()) {
             JsonObject featureObject = new JsonObject();
@@ -118,6 +128,15 @@ public final class ConfigManager {
 
     public Path configPath() {
         return configPath;
+    }
+
+    public AppearanceConfig appearance() {
+        return appearance;
+    }
+
+    public void setAppearance(AppearanceConfig appearance) {
+        this.appearance = Objects.requireNonNull(appearance, "appearance");
+        ThemeManager.applyAppearance(appearance);
     }
 
     private void loadFeature(JsonObject features, QOLFeature feature) {
@@ -153,45 +172,79 @@ public final class ConfigManager {
 
     private JsonObject saveHud() {
         JsonObject hud = new JsonObject();
-        HudWidgetConfig config = hudManager.config().contextualStatus();
-        HudPosition position = config.position();
-        JsonObject status = new JsonObject();
-        status.addProperty("enabled", config.enabled());
-        status.addProperty("anchor", position.anchor().name());
-        status.addProperty("xOffset", position.xOffset());
-        status.addProperty("yOffset", position.yOffset());
-        status.addProperty("scale", position.scale());
-        status.addProperty("opacity", position.opacity());
-        hud.add("contextualStatus", status);
+        for (EditableHudWidget widget : hudManager.editableWidgets()) {
+            hud.add(widget.editorMetadata().configKey(), saveHudWidget(widget.config()));
+        }
         return hud;
     }
 
-    private void loadHud(JsonObject hud) {
+    private JsonObject saveHudWidget(HudWidgetConfig config) {
+        HudPosition position = config.position();
+        JsonObject widget = new JsonObject();
+        widget.addProperty("enabled", config.enabled());
+        widget.addProperty("anchor", position.anchor().name());
+        widget.addProperty("xOffset", position.xOffset());
+        widget.addProperty("yOffset", position.yOffset());
+        widget.addProperty("scale", position.scale());
+        widget.addProperty("opacity", position.opacity());
+        return widget;
+    }
+
+    private void loadHud(JsonObject hud, int configVersion) {
         if (hud == null) {
             return;
         }
-        JsonObject status = getObject(hud, "contextualStatus");
-        if (status == null) {
+        for (EditableHudWidget widget : hudManager.editableWidgets()) {
+            loadHudWidget(
+                    hud,
+                    widget.editorMetadata().configKey(),
+                    widget.config(),
+                    widget.editorMetadata().displayName()
+            );
+        }
+        migrateSharedHudLane(configVersion);
+    }
+
+    private void migrateSharedHudLane(int configVersion) {
+        if (configVersion >= 4) {
+            return;
+        }
+        HudPosition status = hudManager.config().contextualStatus().position();
+        HudWidgetConfig notifications = hudManager.config().notifications();
+        if (notifications.position().equals(status)) {
+            HudPosition defaults = notifications.defaultPosition();
+            notifications.setPosition(new HudPosition(
+                    defaults.anchor(),
+                    defaults.xOffset(),
+                    defaults.yOffset(),
+                    status.scale(),
+                    status.opacity()
+            ));
+        }
+    }
+
+    private void loadHudWidget(JsonObject hud, String key, HudWidgetConfig config, String description) {
+        JsonObject widget = getObject(hud, key);
+        if (widget == null) {
             return;
         }
 
-        HudWidgetConfig config = hudManager.config().contextualStatus();
-        JsonElement enabled = status.get("enabled");
+        JsonElement enabled = widget.get("enabled");
         if (enabled != null && enabled.isJsonPrimitive() && enabled.getAsJsonPrimitive().isBoolean()) {
             config.setEnabled(enabled.getAsBoolean());
         }
 
         HudPosition defaults = config.position();
         try {
-            HudAnchor anchor = readEnum(status, "anchor", HudAnchor.class, defaults.anchor());
-            int xOffset = readInt(status, "xOffset", defaults.xOffset());
-            int yOffset = readInt(status, "yOffset", defaults.yOffset());
-            double scale = readDouble(status, "scale", defaults.scale());
-            double opacity = readDouble(status, "opacity", defaults.opacity());
+            HudAnchor anchor = readEnum(widget, "anchor", HudAnchor.class, defaults.anchor());
+            int xOffset = readInt(widget, "xOffset", defaults.xOffset());
+            int yOffset = readInt(widget, "yOffset", defaults.yOffset());
+            double scale = readDouble(widget, "scale", defaults.scale());
+            double opacity = readDouble(widget, "opacity", defaults.opacity());
             config.setPosition(new HudPosition(anchor, xOffset, yOffset, scale, opacity));
         } catch (RuntimeException exception) {
-            logger.warn("Invalid contextual HUD position; using defaults.", exception);
-            config.setPosition(HudPosition.upperRightDefault());
+            logger.warn("Invalid {} position; using defaults.", description, exception);
+            config.setPosition(defaults);
         }
     }
 

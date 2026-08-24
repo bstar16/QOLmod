@@ -11,9 +11,11 @@ import com.bstar.qolmod.feature.FeatureStatus;
 import com.bstar.qolmod.feature.QOLFeature;
 import com.bstar.qolmod.feature.ResetReason;
 import com.bstar.qolmod.feature.dupe.AutoDuperConfig;
+import com.bstar.qolmod.feature.dupe.AutoDuperNotificationPublisher;
 import com.bstar.qolmod.feature.dupe.AutoDuperWorkflow;
 import com.bstar.qolmod.feature.dupe.AutoDuperStatusPublisher;
 import com.bstar.qolmod.hud.status.StatusRegistry;
+import com.bstar.qolmod.hud.notification.NotificationManager;
 import com.bstar.qolmod.setting.BooleanSetting;
 import com.bstar.qolmod.setting.DoubleSetting;
 import com.bstar.qolmod.setting.IntSetting;
@@ -96,13 +98,19 @@ public final class AutoDuperFeature extends QOLFeature {
     );
     private final AutomationEngine automation;
     private final AutoDuperStatusPublisher statusPublisher;
+    private final AutoDuperNotificationPublisher notificationPublisher;
     private AutoDuperWorkflow workflow;
     private String startFailure;
 
-    public AutoDuperFeature(AutomationEngine automation, StatusRegistry statusRegistry) {
+    public AutoDuperFeature(
+            AutomationEngine automation,
+            StatusRegistry statusRegistry,
+            NotificationManager notificationManager
+    ) {
         super("auto-duper", "Auto Duper", "Automatically dupes items using the donkey method.");
         this.automation = Objects.requireNonNull(automation, "automation");
         statusPublisher = new AutoDuperStatusPublisher(statusRegistry);
+        notificationPublisher = new AutoDuperNotificationPublisher(notificationManager);
     }
 
     @Override
@@ -117,6 +125,7 @@ public final class AutoDuperFeature extends QOLFeature {
         } else {
             startFailure = result.message();
             statusPublisher.publishStartFailure(startFailure);
+            notificationPublisher.error(startFailure);
             updateStatus(FeatureStatus.detailed(FeatureState.ERROR, "AutoDuper could not start", startFailure));
         }
     }
@@ -160,12 +169,14 @@ public final class AutoDuperFeature extends QOLFeature {
         String detail = automationStatus.detail().orElse(stopReason.name());
         statusPublisher.publish(automationStatus, workflow);
         if (stopReason == AutomationStopReason.COMPLETED) {
+            notificationPublisher.completed(workflow.completedCycles());
             sendMessage("Completed all " + workflow.completedCycles() + " cycles - stopping");
             updateStatus(FeatureStatus.detailed(FeatureState.COMPLETED, "AutoDuper complete", detail));
             featureManager().disable(this, ResetReason.USER_DISABLED);
             return;
         }
         if (automationStatus.state() == AutomationState.ERROR) {
+            notificationPublisher.error(detail);
             sendMessage(detail);
             updateStatus(FeatureStatus.detailed(FeatureState.ERROR, "AutoDuper stopped", detail));
             featureManager().disable(this, ResetReason.ERROR);

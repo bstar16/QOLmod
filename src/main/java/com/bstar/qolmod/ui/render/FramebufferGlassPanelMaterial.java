@@ -36,15 +36,60 @@ public final class FramebufferGlassPanelMaterial implements PanelMaterial {
     private static final boolean BLUR_ENABLED = !Boolean.getBoolean("qolmod.glass.disableBlur");
     private static final boolean TINT_ENABLED = !Boolean.getBoolean("qolmod.glass.disableTint");
     private static final boolean DEBUG_BOUNDS = Boolean.getBoolean("qolmod.glass.debugBounds");
+    private static AdvancedBlurState advancedBlurState = AdvancedBlurState.UNINITIALIZED;
 
     private final Pool framebufferPool = new Pool(3);
+    private final LiquidGlassSurfaceRenderer surfaceRenderer = new LiquidGlassSurfaceRenderer();
     private Framebuffer captureFramebuffer;
+    private TextureSetup captureTextureSetup;
     private FramebufferRegion captureRegion;
     private int captureReadFramebuffer;
     private int captureDrawFramebuffer;
     private boolean prepared;
     private boolean permanentlyDisabled;
     private boolean failureLogged;
+    private boolean initializationLogged;
+
+    /** Validates and warms the managed post-effect outside the per-frame GUI render path. */
+    public static synchronized void initializeAdvancedPath(MinecraftClient client) {
+        if (advancedBlurState != AdvancedBlurState.UNINITIALIZED) {
+            return;
+        }
+        if (!BLUR_ENABLED) {
+            advancedBlurState = AdvancedBlurState.DISABLED;
+            QOLmodClient.LOGGER.info("QOLmod liquid-glass blur is disabled by system property.");
+            return;
+        }
+        try {
+            PostEffectProcessor blur = client.getShaderLoader().loadPostEffect(
+                    BLUR_EFFECT,
+                    net.minecraft.client.render.DefaultFramebufferSet.MAIN_ONLY
+            );
+            if (blur == null) {
+                advancedBlurState = AdvancedBlurState.UNAVAILABLE;
+                QOLmodClient.LOGGER.warn(
+                        "QOLmod liquid-glass blur resource is unavailable; translucent fallback is active."
+                );
+            } else {
+                advancedBlurState = AdvancedBlurState.AVAILABLE;
+                QOLmodClient.LOGGER.info(
+                        "QOLmod liquid-glass shader initialized; panel-local blur is available."
+                );
+            }
+        } catch (RuntimeException exception) {
+            advancedBlurState = AdvancedBlurState.UNAVAILABLE;
+            QOLmodClient.LOGGER.error(
+                    "QOLmod liquid-glass shader failed to initialize; translucent fallback is active.",
+                    exception
+            );
+        }
+    }
+
+    /** Revalidates managed shader resources after Minecraft completes the shader reload phase. */
+    public static synchronized void reloadAdvancedPath(MinecraftClient client) {
+        advancedBlurState = AdvancedBlurState.UNINITIALIZED;
+        initializeAdvancedPath(client);
+    }
 
     @Override
     public void prepareFrame(DrawContext context, int x, int y, int width, int height) {
@@ -61,6 +106,12 @@ public final class FramebufferGlassPanelMaterial implements PanelMaterial {
 
         try {
             GlassStyle glass = ThemeManager.active().glass();
+            if (BLUR_ENABLED && glass.blurStrength() > 0.0) {
+                initializeAdvancedPath(client);
+                if (advancedBlurState != AdvancedBlurState.AVAILABLE) {
+                    return;
+                }
+            }
             captureRegion = FramebufferRegion.capture(
                     x, y, width, height, glass.blurPaddingPixels(),
                     main.textureWidth, main.textureHeight,
@@ -69,15 +120,32 @@ public final class FramebufferGlassPanelMaterial implements PanelMaterial {
             ensureCaptureFramebuffer(captureRegion.width(), captureRegion.height());
             capture(main);
 
-            if (BLUR_ENABLED) {
-                PostEffectProcessor blur = client.getShaderLoader()
-                        .loadPostEffect(BLUR_EFFECT, net.minecraft.client.render.DefaultFramebufferSet.MAIN_ONLY);
+            boolean blurApplied = false;
+            if (BLUR_ENABLED && glass.blurStrength() > 0.0) {
+                PostEffectProcessor blur = client.getShaderLoader().loadPostEffect(
+                        BLUR_EFFECT,
+                        net.minecraft.client.render.DefaultFramebufferSet.MAIN_ONLY
+                );
                 if (blur != null) {
                     blur.render(captureFramebuffer, framebufferPool);
+                    blurApplied = true;
+                } else {
+                    advancedBlurState = AdvancedBlurState.UNAVAILABLE;
                 }
             }
             framebufferPool.decrementLifespan();
-            prepared = true;
+            prepared = !BLUR_ENABLED || glass.blurStrength() <= 0.0 || blurApplied;
+            if (prepared && !initializationLogged) {
+                initializationLogged = true;
+                QOLmodClient.LOGGER.info(BLUR_ENABLED && blurApplied
+                        ? "QOLmod liquid glass initialized with panel-local framebuffer blur."
+                        : "QOLmod liquid glass initialized with advanced blur disabled.");
+            } else if (!prepared && !failureLogged) {
+                failureLogged = true;
+                QOLmodClient.LOGGER.warn(
+                        "QOLmod liquid-glass blur resource was unavailable; using the translucent fallback."
+                );
+            }
         } catch (RuntimeException exception) {
             permanentlyDisabled = true;
             if (!failureLogged) {
@@ -97,6 +165,10 @@ public final class FramebufferGlassPanelMaterial implements PanelMaterial {
             captureFramebuffer.delete();
         }
         captureFramebuffer = new SimpleFramebuffer("QOLmod panel glass", width, height, false);
+        captureTextureSetup = TextureSetup.of(
+                captureFramebuffer.getColorAttachmentView(),
+                RenderSystem.getSamplerCache().get(FilterMode.LINEAR)
+        );
         if (captureReadFramebuffer == 0) {
             captureReadFramebuffer = GlStateManager.glGenFramebuffers();
             captureDrawFramebuffer = GlStateManager.glGenFramebuffers();
@@ -135,7 +207,22 @@ public final class FramebufferGlassPanelMaterial implements PanelMaterial {
     @Override
     public void drawMainPanel(DrawContext context, int x, int y, int width, int height) {
         GlassStyle glass = ThemeManager.active().glass();
-        drawSurface(context, x, y, width, height, x, x + width, glass.mainTint());
+        int tint = TINT_ENABLED ? glass.mainTint() : 0;
+        GlassSurface surface = new GlassSurface(
+                x,
+                y,
+                width,
+                height,
+                1.0,
+                tint,
+                0,
+                glass.blurStrength()
+        );
+        surfaceRenderer.draw(context, surface, prepared ? this::drawBackdrop : null);
+
+        if (DEBUG_BOUNDS && captureRegion != null) {
+            drawDebugBounds(context, x, y, width, height);
+        }
     }
 
     @Override
@@ -155,10 +242,30 @@ public final class FramebufferGlassPanelMaterial implements PanelMaterial {
         // independent UV/scissor state. Keep the settings material panel-local by layering only its
         // tint over the existing main glass sample. The screen's existing header/sidebar/footer
         // dividers already define this internal surface, so it does not need a second outer edge.
-        drawOverlay(context, x, y, width, height, clipLeft, clipRight, glass.drawerTint(), false);
+        drawOverlay(context, x, y, width, height, clipLeft, clipRight, glass.drawerTint());
     }
 
-    private void drawSurface(
+    private void drawBackdrop(DrawContext context, GlassSurface surface) {
+        if (captureFramebuffer == null || captureRegion == null) {
+            return;
+        }
+        int backdropAlpha = LiquidGlassSurfaceRenderer.multiplyAlpha(
+                0xFFFFFFFF,
+                surface.opacity() * surface.blurStrength()
+        );
+        drawCapturedQuad(
+                context,
+                surface.x(),
+                surface.y(),
+                surface.width(),
+                surface.height(),
+                0.0,
+                0.0,
+                backdropAlpha
+        );
+    }
+
+    private void drawOverlay(
             DrawContext context,
             int x,
             int y,
@@ -174,56 +281,44 @@ public final class FramebufferGlassPanelMaterial implements PanelMaterial {
             return;
         }
 
-        if (prepared && captureFramebuffer != null && captureRegion != null) {
-            FramebufferRegion.SurfaceUv uv = captureRegion.uvFor(x, y, width, height);
-            TextureSetup texture = TextureSetup.of(
-                    captureFramebuffer.getColorAttachmentView(),
-                    RenderSystem.getSamplerCache().get(FilterMode.LINEAR)
-            );
-            ScreenRect scissor = new ScreenRect(safeClipLeft, y, safeClipRight - safeClipLeft, height);
-            context.state.addSimpleElement(new TexturedQuadGuiElementRenderState(
-                    RenderPipelines.GUI_TEXTURED,
-                    texture,
-                    new Matrix3x2f(context.getMatrices()),
-                    x, y, x + width, y + height,
-                    uv.uLeft(), uv.uRight(), uv.vTop(), uv.vBottom(),
-                    0xFFFFFFFF,
-                    scissor
-            ));
+        context.enableScissor(safeClipLeft, y, safeClipRight, y + height);
+        if (TINT_ENABLED) {
+            context.fill(x, y, x + width, y + height, tint);
         }
-
-        drawOverlay(context, x, y, width, height, safeClipLeft, safeClipRight, tint, true);
-
-        if (DEBUG_BOUNDS && captureRegion != null) {
-            drawDebugBounds(context, x, y, width, height);
-        }
+        context.disableScissor();
     }
 
-    private void drawOverlay(
+    private void drawCapturedQuad(
             DrawContext context,
             int x,
             int y,
             int width,
             int height,
-            int clipLeft,
-            int clipRight,
-            int tint,
-            boolean drawEdges
+            double framebufferOffsetX,
+            double framebufferOffsetY,
+            int color
     ) {
-        int safeClipLeft = Math.max(x, clipLeft);
-        int safeClipRight = Math.min(x + width, clipRight);
-        if (safeClipRight <= safeClipLeft) {
+        if (width <= 0 || height <= 0 || captureFramebuffer == null || captureRegion == null) {
             return;
         }
-
-        context.enableScissor(safeClipLeft, y, safeClipRight, y + height);
-        if (TINT_ENABLED) {
-            context.fill(x, y, x + width, y + height, tint);
-        }
-        if (drawEdges) {
-            UiStroke.border(context, x, y, width, height, ThemeManager.active().colors().outerBorder());
-        }
-        context.disableScissor();
+        FramebufferRegion.SurfaceUv uv = captureRegion.uvFor(
+                x,
+                y,
+                width,
+                height,
+                framebufferOffsetX,
+                framebufferOffsetY
+        );
+        ScreenRect scissor = new ScreenRect(x, y, width, height);
+        context.state.addSimpleElement(new TexturedQuadGuiElementRenderState(
+                RenderPipelines.GUI_TEXTURED,
+                captureTextureSetup,
+                new Matrix3x2f(context.getMatrices()),
+                x, y, x + width, y + height,
+                uv.uLeft(), uv.uRight(), uv.vTop(), uv.vBottom(),
+                color,
+                scissor
+        ));
     }
 
     private void drawDebugBounds(DrawContext context, int x, int y, int width, int height) {
@@ -248,6 +343,7 @@ public final class FramebufferGlassPanelMaterial implements PanelMaterial {
         if (captureFramebuffer != null) {
             captureFramebuffer.delete();
             captureFramebuffer = null;
+            captureTextureSetup = null;
         }
         if (captureReadFramebuffer != 0) {
             GlStateManager._glDeleteFramebuffers(captureReadFramebuffer);
@@ -255,5 +351,12 @@ public final class FramebufferGlassPanelMaterial implements PanelMaterial {
             captureReadFramebuffer = 0;
             captureDrawFramebuffer = 0;
         }
+    }
+
+    private enum AdvancedBlurState {
+        UNINITIALIZED,
+        AVAILABLE,
+        UNAVAILABLE,
+        DISABLED
     }
 }

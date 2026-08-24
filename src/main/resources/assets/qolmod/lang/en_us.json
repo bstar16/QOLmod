@@ -1,5 +1,6 @@
 {
   "category.qolmod.controls": "QOLmod",
-  "key.qolmod.open_config": "Open Config",
+  "key.qolmod.open_config": "Open QOLmod",
+  "key.qolmod.panic": "Panic",
   "key.qolmod.toggle_auto_duper": "Toggle Auto Duper"
 }

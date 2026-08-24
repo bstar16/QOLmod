@@ -59,12 +59,23 @@ record FramebufferRegion(
     }
 
     SurfaceUv uvFor(int guiX, int guiY, int guiRegionWidth, int guiRegionHeight) {
+        return uvFor(guiX, guiY, guiRegionWidth, guiRegionHeight, 0.0, 0.0);
+    }
+
+    SurfaceUv uvFor(
+            int guiX,
+            int guiY,
+            int guiRegionWidth,
+            int guiRegionHeight,
+            double framebufferOffsetX,
+            double framebufferOffsetY
+    ) {
         double scaleX = framebufferWidth / (double) guiWidth;
         double scaleY = framebufferHeight / (double) guiHeight;
-        double surfaceLeft = guiX * scaleX;
-        double surfaceRight = (guiX + guiRegionWidth) * scaleX;
-        double surfaceTop = guiY * scaleY;
-        double surfaceBottom = (guiY + guiRegionHeight) * scaleY;
+        double surfaceLeft = guiX * scaleX + framebufferOffsetX;
+        double surfaceRight = (guiX + guiRegionWidth) * scaleX + framebufferOffsetX;
+        double surfaceTop = guiY * scaleY + framebufferOffsetY;
+        double surfaceBottom = (guiY + guiRegionHeight) * scaleY + framebufferOffsetY;
 
         float uLeft = (float) ((surfaceLeft - left) / width());
         float uRight = (float) ((surfaceRight - left) / width());

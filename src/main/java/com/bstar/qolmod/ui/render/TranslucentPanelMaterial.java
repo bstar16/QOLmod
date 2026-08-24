@@ -1,17 +1,19 @@
 package com.bstar.qolmod.ui.render;
 
-import com.bstar.qolmod.ui.theme.ColorPalette;
+import com.bstar.qolmod.ui.theme.GlassStyle;
 import com.bstar.qolmod.ui.theme.ThemeManager;
 import net.minecraft.client.gui.DrawContext;
 
-/** Stage 1 dark translucent fallback material. */
+/** Dark translucent fallback that retains the shared liquid-glass edge treatment. */
 public final class TranslucentPanelMaterial implements PanelMaterial {
+    private final LiquidGlassSurfaceRenderer renderer = new LiquidGlassSurfaceRenderer();
+
     @Override
     public void drawMainPanel(DrawContext context, int x, int y, int width, int height) {
-        ColorPalette colors = ThemeManager.active().colors();
-        context.fill(x, y, x + width, y + height, colors.surface());
-        UiStroke.border(context, x, y, width, height, colors.outerBorder());
-        UiStroke.border(context, x + 2, y + 2, width - 4, height - 4, colors.subtleDivider());
+        GlassStyle style = ThemeManager.active().glass();
+        renderer.draw(context, new GlassSurface(
+                x, y, width, height, 1.0, style.mainTint(), 0, 0.0
+        ));
     }
 
     @Override
@@ -25,9 +27,17 @@ public final class TranslucentPanelMaterial implements PanelMaterial {
             int clipLeft,
             int clipRight
     ) {
-        ColorPalette colors = ThemeManager.active().colors();
-        context.fill(x, y, x + width, y + height, attached ? colors.surface() : colors.elevatedSurface());
-        UiStroke.border(context, x, y, width, height, colors.outerBorder());
-        UiStroke.border(context, x + 2, y + 2, width - 4, height - 4, colors.subtleDivider());
+        GlassStyle style = ThemeManager.active().glass();
+        int tint = attached ? style.drawerTint() : style.hudTint();
+        int safeLeft = Math.max(x, clipLeft);
+        int safeRight = Math.min(x + width, clipRight);
+        if (safeRight <= safeLeft) {
+            return;
+        }
+        context.enableScissor(safeLeft, y, safeRight, y + height);
+        renderer.draw(context, new GlassSurface(
+                x, y, width, height, 1.0, tint, 0, 0.0
+        ));
+        context.disableScissor();
     }
 }

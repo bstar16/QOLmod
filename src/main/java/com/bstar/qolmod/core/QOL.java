@@ -38,9 +38,11 @@ public final class QOL {
         eventBus = new QOLEventBus(logger);
         automationEngine = new AutomationEngine(context, eventBus, logger);
         featureManager = new FeatureManager(context, eventBus, logger);
-        hudManager = new HudManager(context, logger);
+        hudManager = new HudManager(context, eventBus, logger);
         configManager = new ConfigManager(featureManager, hudManager, logger);
-        keybindManager = new KeybindManager(context, eventBus, featureManager, configManager, hudManager);
+        keybindManager = new KeybindManager(
+                context, eventBus, featureManager, configManager, hudManager, this::panic
+        );
         fabricEventBridge = new FabricEventBridge(context, eventBus);
     }
 
@@ -51,7 +53,11 @@ public final class QOL {
         initialized = true;
 
         automationEngine.register();
-        featureManager.register(new AutoDuperFeature(automationEngine, hudManager.statuses()));
+        featureManager.register(new AutoDuperFeature(
+                automationEngine,
+                hudManager.statuses(),
+                hudManager.notifications()
+        ));
         StorageLabelsFeature storageLabels = new StorageLabelsFeature();
         featureManager.register(storageLabels);
         QOLmodClientCommands.register(this, storageLabels);
@@ -65,7 +71,9 @@ public final class QOL {
     public void panic() {
         automationEngine.panic();
         featureManager.disableAll(ResetReason.PANIC);
+        hudManager.clearNotifications();
         keybindManager.clearTransientState();
+        PanicNotification.publish(hudManager.notifications());
         configManager.save();
         logger.warn("QOLmod panic reset completed.");
     }
