@@ -1,4 +1,8 @@
-# QOLmod
+# QOLmod 
+# Coded By Codex - Designed By bstar__
+
+# AI Development Disclaimer
+This project is developed with substantial assistance from AI coding tools. I am responsible for the project’s design, feature decisions, testing, debugging direction, and overall architecture, but I do not claim authorship of the generated source code or that all code is wholly original. AI-generated code may incorporate common programming patterns or resemble existing implementations unintentionally.
 
 QOLmod is a small, client-side quality-of-life mod for Minecraft 1.21.11. It uses Java 21, Fabric Loader, and Fabric API.
 
