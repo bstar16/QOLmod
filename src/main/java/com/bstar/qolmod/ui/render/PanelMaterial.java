@@ -4,7 +4,7 @@ import net.minecraft.client.gui.DrawContext;
 
 /**
  * Replaceable panel-local material boundary; implementations must leave framebuffer pixels outside
- * the supplied surface bounds untouched. Stage 3 can supply glass without changing screen layout.
+ * the supplied surface bounds untouched. Screens retain layout and content ownership.
  */
 public interface PanelMaterial extends AutoCloseable {
     /** Captures/prepares the smallest rectangle containing all visible QOLmod glass. */

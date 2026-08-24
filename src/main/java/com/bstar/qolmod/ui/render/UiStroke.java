@@ -2,7 +2,7 @@ package com.bstar.qolmod.ui.render;
 
 import net.minecraft.client.gui.DrawContext;
 
-/** Shared one-pixel, integer-aligned strokes for QOLmod surfaces and dividers. */
+/** Shared integer-aligned strokes for QOLmod surfaces and dividers. */
 public final class UiStroke {
     private UiStroke() {
     }
@@ -52,5 +52,13 @@ public final class UiStroke {
                 vertical(context, x + width - 1, y + 1, y + height - 1, color);
             }
         }
+    }
+
+    /** Returns the number of complete inset rings that fit without overlapping. */
+    public static int effectiveBorderThickness(int width, int height, int requestedThickness) {
+        if (width <= 0 || height <= 0 || requestedThickness <= 0) {
+            return 0;
+        }
+        return Math.min(requestedThickness, (Math.min(width, height) + 1) / 2);
     }
 }

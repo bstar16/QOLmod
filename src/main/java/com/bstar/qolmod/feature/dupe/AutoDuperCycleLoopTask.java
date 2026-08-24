@@ -68,11 +68,7 @@ final class AutoDuperCycleLoopTask implements QOLTask {
 
     @Override
     public String activity() {
-        int cycleNumber = completedCycles + 1;
-        String cycle = targetCycles == 0
-                ? "Cycle " + cycleNumber + " / infinite"
-                : "Cycle " + cycleNumber + " / " + targetCycles;
-        return activeCycle == null ? cycle : cycle + " - " + activeCycle.activity();
+        return activeCycle == null ? "Starting cycle" : activeCycle.activity();
     }
 
     @Override

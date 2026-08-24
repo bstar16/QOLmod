@@ -12,6 +12,7 @@ import com.bstar.qolmod.feature.ResetReason;
 import com.bstar.qolmod.feature.impl.AutoDuperFeature;
 import com.bstar.qolmod.feature.impl.StorageLabelsFeature;
 import com.bstar.qolmod.input.KeybindManager;
+import com.bstar.qolmod.hud.HudManager;
 import java.util.Objects;
 import net.minecraft.client.MinecraftClient;
 import org.slf4j.Logger;
@@ -23,6 +24,7 @@ public final class QOL {
     private final QOLEventBus eventBus;
     private final AutomationEngine automationEngine;
     private final FeatureManager featureManager;
+    private final HudManager hudManager;
     private final ConfigManager configManager;
     private final KeybindManager keybindManager;
     private final FabricEventBridge fabricEventBridge;
@@ -36,8 +38,11 @@ public final class QOL {
         eventBus = new QOLEventBus(logger);
         automationEngine = new AutomationEngine(context, eventBus, logger);
         featureManager = new FeatureManager(context, eventBus, logger);
-        configManager = new ConfigManager(featureManager, logger);
-        keybindManager = new KeybindManager(context, eventBus, featureManager, configManager);
+        hudManager = new HudManager(context, eventBus, logger);
+        configManager = new ConfigManager(featureManager, hudManager, logger);
+        keybindManager = new KeybindManager(
+                context, eventBus, featureManager, configManager, hudManager, this::panic
+        );
         fabricEventBridge = new FabricEventBridge(context, eventBus);
     }
 
@@ -48,11 +53,16 @@ public final class QOL {
         initialized = true;
 
         automationEngine.register();
-        featureManager.register(new AutoDuperFeature(automationEngine));
+        featureManager.register(new AutoDuperFeature(
+                automationEngine,
+                hudManager.statuses(),
+                hudManager.notifications()
+        ));
         StorageLabelsFeature storageLabels = new StorageLabelsFeature();
         featureManager.register(storageLabels);
         QOLmodClientCommands.register(this, storageLabels);
         configManager.load();
+        hudManager.register();
         keybindManager.register();
         shutdownSubscription = eventBus.subscribe(ClientShutdownEvent.class, event -> shutdown());
         fabricEventBridge.register();
@@ -61,7 +71,9 @@ public final class QOL {
     public void panic() {
         automationEngine.panic();
         featureManager.disableAll(ResetReason.PANIC);
+        hudManager.clearNotifications();
         keybindManager.clearTransientState();
+        PanicNotification.publish(hudManager.notifications());
         configManager.save();
         logger.warn("QOLmod panic reset completed.");
     }
@@ -75,6 +87,7 @@ public final class QOL {
         configManager.save();
         keybindManager.shutdown();
         featureManager.shutdown();
+        hudManager.shutdown();
         if (shutdownSubscription != null) {
             shutdownSubscription.close();
             shutdownSubscription = null;
@@ -99,6 +112,10 @@ public final class QOL {
 
     public ConfigManager configManager() {
         return configManager;
+    }
+
+    public HudManager hud() {
+        return hudManager;
     }
 
     public KeybindManager keybindManager() {

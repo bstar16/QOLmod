@@ -93,4 +93,43 @@ final class FramebufferRegionTest {
         assertTrue(uv.uLeft() >= 0.0f && uv.uRight() <= 1.0f);
         assertTrue(uv.vBottom() >= 0.0f && uv.vTop() <= 1.0f);
     }
+
+    @Test
+    void clampsPaddedCaptureAtEveryFramebufferEdge() {
+        FramebufferRegion topLeft = FramebufferRegion.capture(
+                0, 0, 50, 40, 12,
+                1280, 720, 640, 360
+        );
+        FramebufferRegion bottomRight = FramebufferRegion.capture(
+                590, 320, 50, 40, 12,
+                1280, 720, 640, 360
+        );
+
+        assertEquals(0, topLeft.left());
+        assertEquals(0, topLeft.top());
+        assertEquals(1280, bottomRight.right());
+        assertEquals(720, bottomRight.bottom());
+
+        FramebufferRegion.SurfaceUv topLeftUv = topLeft.uvFor(0, 0, 50, 40);
+        FramebufferRegion.SurfaceUv bottomRightUv = bottomRight.uvFor(590, 320, 50, 40);
+        assertEquals(0.0, topLeftUv.uLeft(), 0.00001);
+        assertEquals(1.0, topLeftUv.vTop(), 0.00001);
+        assertEquals(1.0, bottomRightUv.uRight(), 0.00001);
+        assertEquals(0.0, bottomRightUv.vBottom(), 0.00001);
+    }
+
+    @Test
+    void framebufferPixelOffsetMovesOnlyTheRequestedSampleAxis() {
+        FramebufferRegion region = FramebufferRegion.capture(
+                100, 50, 400, 300, 12,
+                1920, 1080, 960, 540
+        );
+        FramebufferRegion.SurfaceUv aligned = region.uvFor(120, 70, 20, 10);
+        FramebufferRegion.SurfaceUv shifted = region.uvFor(120, 70, 20, 10, 0.65, 0.65);
+
+        assertEquals(aligned.uLeft() + 0.65 / region.width(), shifted.uLeft(), 0.00001);
+        assertEquals(aligned.uRight() + 0.65 / region.width(), shifted.uRight(), 0.00001);
+        assertEquals(aligned.vTop() - 0.65 / region.height(), shifted.vTop(), 0.00001);
+        assertEquals(aligned.vBottom() - 0.65 / region.height(), shifted.vBottom(), 0.00001);
+    }
 }

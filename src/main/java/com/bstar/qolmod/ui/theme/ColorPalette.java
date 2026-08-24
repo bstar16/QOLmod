@@ -14,6 +14,7 @@ public record ColorPalette(
         int secondaryText,
         int mutedText,
         int active,
+        int success,
         int waiting,
         int completed,
         int error,
